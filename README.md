@@ -1,6 +1,6 @@
 # AgroNexus — Frontend
 
-React + TypeScript + Vite web application for the AgroNexus smart farming management platform.
+React + TypeScript + Vite web application for the AgroNexus smart agrinexus-farm management platform.
 
 ## Tech Stack
 
