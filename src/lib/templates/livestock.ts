@@ -1,0 +1,300 @@
+import { ProductionTemplate } from '../types';
+
+export const dairyCattleTemplate: ProductionTemplate = {
+  id: 'dairy_cattle',
+  name: 'Dairy Cattle',
+  shortName: 'Dairy',
+  category: 'livestock',
+  species: 'Cattle',
+  purpose: 'Dairy',
+  description: 'Cow milk production — herd management, lactation tracking, and milk sales.',
+  icon: '🐄',
+  color: 'sky',
+  tags: ['livestock', 'cattle', 'dairy', 'milk'],
+  materials: [
+    { id: 'heifer', name: 'Heifer / Cow', unit: 'head', category: 'input' },
+    { id: 'dairy_feed', name: 'Total Mixed Ration / Dairy Feed', unit: 'kg', category: 'input' },
+    { id: 'pasture', name: 'Pasture / Hay', unit: 'kg', category: 'input' },
+    { id: 'raw_milk', name: 'Raw Milk', unit: 'litre', category: 'output', perishable: true, requiresColdChain: true },
+    { id: 'calf', name: 'Calves', unit: 'count', category: 'output' },
+    { id: 'culled_cow', name: 'Culled Cows', unit: 'head', category: 'output' },
+  ],
+  kpis: [
+    { id: 'milk_per_cow', name: 'Milk per Cow per Day', unit: 'litres', goodDirection: 'up', benchmark: 15 },
+    { id: 'somatic_cell_count', name: 'Somatic Cell Count', unit: '000/ml', goodDirection: 'down', benchmark: 200 },
+    { id: 'calving_rate', name: 'Calving Rate', unit: '%', goodDirection: 'up', benchmark: 90 },
+    { id: 'days_in_milk', name: 'Average Days in Milk', unit: 'days', goodDirection: 'neutral', benchmark: 305 },
+    { id: 'cost_per_litre', name: 'Cost per Litre', unit: 'ZMW', goodDirection: 'down' },
+  ],
+  stages: [
+    {
+      id: 'dry_period',
+      name: 'Dry Period',
+      description: '60 days before calving — rest and prepare for next lactation',
+      typicalDurationDays: 60,
+      color: 'slate',
+      inputs: [
+        { id: 'dairy_feed', label: 'Dry Cow Feed', unit: 'kg', required: true },
+      ],
+      activities: ['Dry off cow', 'Dry cow therapy', 'Condition score monitoring', 'Vaccine boosters'],
+      measurements: [
+        { id: 'body_condition_score', name: 'Body Condition Score', unit: 'ratio', frequency: 'weekly', required: true, benchmark: { min: 3, max: 3.5 } },
+        { id: 'feed_intake', name: 'Daily Feed Intake', unit: 'kg', frequency: 'daily', required: false },
+      ],
+      outputs: [],
+      possibleNextStages: ['calving'],
+    },
+    {
+      id: 'calving',
+      name: 'Calving',
+      typicalDurationDays: 3,
+      color: 'pink',
+      inputs: [],
+      activities: ['Monitor for calving signs', 'Assist if needed', 'Colostrum management', 'Record calf details', 'Tag & weigh calf'],
+      measurements: [
+        { id: 'calf_birth_weight', name: 'Calf Birth Weight', unit: 'kg', frequency: 'per_event', required: true },
+        { id: 'calving_ease', name: 'Calving Ease Score', unit: 'count', frequency: 'per_event', required: false },
+      ],
+      outputs: [
+        { id: 'calf', label: 'Calf', unit: 'count', routingOptions: ['inventory', 'sale', 'transfer'] },
+      ],
+      possibleNextStages: ['early_lactation'],
+    },
+    {
+      id: 'early_lactation',
+      name: 'Early Lactation (0–100 DIM)',
+      typicalDurationDays: 100,
+      color: 'green',
+      inputs: [
+        { id: 'dairy_feed', label: 'Lactation Feed / TMR', unit: 'kg', required: true },
+      ],
+      activities: ['Twice daily milking', 'Peak milk monitoring', 'Mastitis checks', 'Re-breeding programme'],
+      measurements: [
+        { id: 'daily_milk', name: 'Daily Milk Yield', unit: 'litre', frequency: 'daily', required: true },
+        { id: 'feed_intake', name: 'Daily Feed Intake', unit: 'kg', frequency: 'daily', required: true },
+        { id: 'milk_fat', name: 'Milk Fat %', unit: 'percent', frequency: 'weekly', required: false, benchmark: { min: 3.5 } },
+        { id: 'milk_protein', name: 'Milk Protein %', unit: 'percent', frequency: 'weekly', required: false, benchmark: { min: 3.0 } },
+      ],
+      outputs: [
+        { id: 'raw_milk', label: 'Raw Milk', unit: 'litre', routingOptions: ['sale', 'processing', 'inventory'] },
+      ],
+      possibleNextStages: ['mid_lactation'],
+    },
+    {
+      id: 'mid_lactation',
+      name: 'Mid & Late Lactation (100–305 DIM)',
+      typicalDurationDays: 205,
+      color: 'blue',
+      inputs: [
+        { id: 'dairy_feed', label: 'Lactation Feed', unit: 'kg', required: true },
+      ],
+      activities: ['Twice daily milking', 'Pregnancy confirmation', 'Nutrition adjustment to condition', 'Gradual drying off plan'],
+      measurements: [
+        { id: 'daily_milk', name: 'Daily Milk Yield', unit: 'litre', frequency: 'daily', required: true },
+        { id: 'body_condition_score', name: 'Body Condition Score', unit: 'ratio', frequency: 'weekly', required: false },
+        { id: 'pregnant', name: 'Confirmed Pregnant', unit: 'count', frequency: 'per_event', required: false },
+      ],
+      outputs: [
+        { id: 'raw_milk', label: 'Raw Milk', unit: 'litre', routingOptions: ['sale', 'processing', 'inventory'] },
+      ],
+      possibleNextStages: ['dry_period'],
+    },
+  ],
+};
+
+export const beefCattleTemplate: ProductionTemplate = {
+  id: 'beef_cattle',
+  name: 'Beef Cattle',
+  shortName: 'Beef',
+  category: 'livestock',
+  species: 'Cattle',
+  purpose: 'Meat',
+  description: 'Beef production — cow-calf, stocker, or feedlot operation tracking.',
+  icon: '🐂',
+  color: 'brown',
+  tags: ['livestock', 'cattle', 'beef', 'meat'],
+  materials: [
+    { id: 'weaner', name: 'Weaners / Stockers', unit: 'head', category: 'input' },
+    { id: 'beef_feed', name: 'Feedlot Ration', unit: 'kg', category: 'input' },
+    { id: 'hay', name: 'Hay / Pasture', unit: 'kg', category: 'input' },
+    { id: 'live_cattle', name: 'Live Cattle', unit: 'head', category: 'output' },
+    { id: 'calf', name: 'Calves', unit: 'count', category: 'output' },
+  ],
+  kpis: [
+    { id: 'adg', name: 'Average Daily Gain', unit: 'kg/day', goodDirection: 'up', benchmark: 0.8 },
+    { id: 'fcr', name: 'Feed Conversion Ratio', unit: 'ratio', goodDirection: 'down', benchmark: 6 },
+    { id: 'dressing_pct', name: 'Dressing %', unit: '%', goodDirection: 'up', benchmark: 55 },
+    { id: 'cost_per_kg', name: 'Cost per kg Liveweight', unit: 'ZMW', goodDirection: 'down' },
+  ],
+  stages: [
+    {
+      id: 'receiving',
+      name: 'Receiving & Adaptation',
+      typicalDurationDays: 21,
+      color: 'slate',
+      inputs: [
+        { id: 'weaner', label: 'Weaners / Stockers', unit: 'head', required: true },
+      ],
+      activities: ['Weigh on arrival', 'Vaccination', 'Deworming', 'Ear tagging', 'Feed adaptation'],
+      measurements: [
+        { id: 'arrival_weight', name: 'Arrival Weight', unit: 'kg', frequency: 'per_event', required: true },
+        { id: 'mortality', name: 'Mortality', unit: 'count', frequency: 'daily', required: true },
+      ],
+      outputs: [],
+      possibleNextStages: ['growing'],
+    },
+    {
+      id: 'growing',
+      name: 'Growing / Stocker',
+      typicalDurationDays: 90,
+      color: 'green',
+      inputs: [
+        { id: 'hay', label: 'Hay / Pasture', unit: 'kg', required: true },
+        { id: 'beef_feed', label: 'Supplement', unit: 'kg', required: false },
+      ],
+      activities: ['Daily observation', 'Monthly weighing', 'Rotate pastures', 'Health monitoring'],
+      measurements: [
+        { id: 'avg_weight', name: 'Average Liveweight', unit: 'kg', frequency: 'weekly', required: true },
+        { id: 'adg', name: 'Average Daily Gain', unit: 'kg', frequency: 'weekly', required: false },
+        { id: 'mortality', name: 'Mortality', unit: 'count', frequency: 'daily', required: true },
+      ],
+      outputs: [],
+      possibleNextStages: ['finishing'],
+    },
+    {
+      id: 'finishing',
+      name: 'Feedlot Finishing',
+      typicalDurationDays: 90,
+      color: 'orange',
+      inputs: [
+        { id: 'beef_feed', label: 'Feedlot Ration', unit: 'kg', required: true },
+      ],
+      activities: ['High-energy ration', 'Daily weighing', 'Feed adjustment', 'Slaughter weight assessment'],
+      measurements: [
+        { id: 'daily_feed', name: 'Daily Feed Intake', unit: 'kg', frequency: 'daily', required: true },
+        { id: 'avg_weight', name: 'Average Liveweight', unit: 'kg', frequency: 'weekly', required: true },
+        { id: 'mortality', name: 'Mortality', unit: 'count', frequency: 'daily', required: true },
+      ],
+      outputs: [
+        { id: 'live_cattle', label: 'Finished Cattle', unit: 'head', routingOptions: ['sale', 'processing'] },
+      ],
+      possibleNextStages: [],
+    },
+  ],
+};
+
+export const piggeryTemplate: ProductionTemplate = {
+  id: 'piggery',
+  name: 'Pig Production',
+  shortName: 'Piggery',
+  category: 'livestock',
+  species: 'Pig',
+  purpose: 'Meat',
+  description: 'Commercial pig production — from farrowing to finisher.',
+  icon: '🐷',
+  color: 'pink',
+  tags: ['livestock', 'pig', 'pork', 'meat'],
+  materials: [
+    { id: 'gilt', name: 'Gilts / Sows', unit: 'head', category: 'input' },
+    { id: 'boar', name: 'Boar', unit: 'head', category: 'input' },
+    { id: 'piglet', name: 'Piglets', unit: 'count', category: 'intermediate' },
+    { id: 'pig_feed_starter', name: 'Creep / Starter Feed', unit: 'kg', category: 'input' },
+    { id: 'pig_feed_grower', name: 'Grower Feed', unit: 'kg', category: 'input' },
+    { id: 'pig_feed_finisher', name: 'Finisher Feed', unit: 'kg', category: 'input' },
+    { id: 'live_pig', name: 'Finisher Pigs', unit: 'count', category: 'output' },
+  ],
+  kpis: [
+    { id: 'pigs_per_sow', name: 'Pigs Weaned per Sow per Year', unit: 'count', goodDirection: 'up', benchmark: 24 },
+    { id: 'fcr', name: 'Feed Conversion Ratio', unit: 'ratio', goodDirection: 'down', benchmark: 2.5 },
+    { id: 'adg', name: 'Average Daily Gain', unit: 'g', goodDirection: 'up', benchmark: 700 },
+    { id: 'mortality_suckling', name: 'Pre-wean Mortality', unit: '%', goodDirection: 'down', benchmark: 10 },
+  ],
+  stages: [
+    {
+      id: 'gestation',
+      name: 'Gestation (114 days)',
+      typicalDurationDays: 114,
+      color: 'pink',
+      inputs: [
+        { id: 'gilt', label: 'Sow', unit: 'head', required: true },
+      ],
+      activities: ['Confirm pregnancy', 'Nutrition management', 'Body condition scoring', 'Transfer to farrowing house'],
+      measurements: [
+        { id: 'body_condition', name: 'Body Condition Score', unit: 'ratio', frequency: 'weekly', required: true },
+        { id: 'feed_intake', name: 'Daily Feed Intake', unit: 'kg', frequency: 'daily', required: true },
+      ],
+      outputs: [],
+      possibleNextStages: ['farrowing'],
+    },
+    {
+      id: 'farrowing',
+      name: 'Farrowing & Suckling',
+      typicalDurationDays: 28,
+      color: 'rose',
+      inputs: [],
+      activities: ['Assist farrowing', 'Colostrum intake', 'Creep feeding', 'Iron injection', 'Castration', 'Weigh piglets'],
+      measurements: [
+        { id: 'born_alive', name: 'Piglets Born Alive', unit: 'count', frequency: 'per_event', required: true },
+        { id: 'born_dead', name: 'Stillbirths', unit: 'count', frequency: 'per_event', required: true },
+        { id: 'weaned', name: 'Piglets Weaned', unit: 'count', frequency: 'per_event', required: true },
+        { id: 'wean_weight', name: 'Average Wean Weight', unit: 'kg', frequency: 'per_event', required: true },
+      ],
+      outputs: [
+        { id: 'piglet', label: 'Weaned Piglets', unit: 'count', routingOptions: ['inventory', 'sale', 'transfer'] },
+      ],
+      possibleNextStages: ['weaner'],
+    },
+    {
+      id: 'weaner',
+      name: 'Weaner (6–12 wks)',
+      typicalDurationDays: 42,
+      color: 'orange',
+      inputs: [
+        { id: 'pig_feed_starter', label: 'Starter Feed', unit: 'kg', required: true },
+      ],
+      activities: ['Group management', 'Daily feed', 'Health monitoring', 'Weigh weekly'],
+      measurements: [
+        { id: 'avg_weight', name: 'Average Weight', unit: 'kg', frequency: 'weekly', required: true },
+        { id: 'mortality', name: 'Mortality', unit: 'count', frequency: 'daily', required: true },
+        { id: 'feed_intake', name: 'Daily Feed Intake', unit: 'kg', frequency: 'daily', required: true },
+      ],
+      outputs: [],
+      possibleNextStages: ['grower'],
+    },
+    {
+      id: 'grower',
+      name: 'Grower (12–18 wks)',
+      typicalDurationDays: 42,
+      color: 'amber',
+      inputs: [
+        { id: 'pig_feed_grower', label: 'Grower Feed', unit: 'kg', required: true },
+      ],
+      activities: ['Ad lib feeding', 'Daily observation', 'Weigh fortnightly'],
+      measurements: [
+        { id: 'avg_weight', name: 'Average Weight', unit: 'kg', frequency: 'weekly', required: true },
+        { id: 'mortality', name: 'Mortality', unit: 'count', frequency: 'daily', required: true },
+        { id: 'adg', name: 'Average Daily Gain', unit: 'g', frequency: 'weekly', required: false },
+      ],
+      outputs: [],
+      possibleNextStages: ['finisher'],
+    },
+    {
+      id: 'finisher',
+      name: 'Finisher (18–24 wks)',
+      typicalDurationDays: 42,
+      color: 'red',
+      inputs: [
+        { id: 'pig_feed_finisher', label: 'Finisher Feed', unit: 'kg', required: true },
+      ],
+      activities: ['Ad lib feeding', 'Target weight monitoring', 'Market weight selection'],
+      measurements: [
+        { id: 'avg_weight', name: 'Average Weight', unit: 'kg', frequency: 'weekly', required: true, benchmark: { target: 90 } },
+        { id: 'mortality', name: 'Mortality', unit: 'count', frequency: 'daily', required: true },
+      ],
+      outputs: [
+        { id: 'live_pig', label: 'Finisher Pigs', unit: 'count', routingOptions: ['sale', 'processing'] },
+      ],
+      possibleNextStages: [],
+    },
+  ],
+};
