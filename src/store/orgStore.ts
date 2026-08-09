@@ -6,6 +6,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { v4 as uuidv4 } from 'uuid';
 import {
   OrgProfile, EnterpriseConfig, ProductionCycle, ProductionUnit,
+  DailyRecord, ProductionEvent,
 } from '@/lib/types';
 import { getTemplate } from '@/lib/templates';
 
@@ -31,6 +32,12 @@ interface OrgState {
   updateCycle: (id: string, patch: Partial<ProductionCycle>) => void;
   getCyclesForEnterprise: (enterpriseId: string) => ProductionCycle[];
   getActiveCycle: (enterpriseId: string) => ProductionCycle | undefined;
+
+  // Stage & record operations
+  addDailyRecord: (cycleId: string, stageId: string, record: Omit<DailyRecord, 'id'>) => void;
+  addEvent: (cycleId: string, stageId: string, event: Omit<ProductionEvent, 'id'>) => void;
+  advanceStage: (cycleId: string) => void;
+  completeCycle: (cycleId: string, endDate: string, notes?: string) => void;
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -164,12 +171,75 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
     return cycles.find(c => c.enterpriseId === enterpriseId && c.status === 'active');
   }, [cycles]);
 
+  // ─── Stage & Record operations ────────────────────────────────────────────────
+
+  const addDailyRecord = useCallback((cycleId: string, stageId: string, record: Omit<DailyRecord, 'id'>) => {
+    setCycles(prev => prev.map(c => {
+      if (c.id !== cycleId) return c;
+      return {
+        ...c,
+        stages: c.stages.map(s => {
+          if (s.id !== stageId) return s;
+          return { ...s, dailyRecords: [...s.dailyRecords, { ...record, id: uuidv4() }] };
+        }),
+      };
+    }));
+  }, []);
+
+  const addEvent = useCallback((cycleId: string, stageId: string, event: Omit<ProductionEvent, 'id'>) => {
+    setCycles(prev => prev.map(c => {
+      if (c.id !== cycleId) return c;
+      return {
+        ...c,
+        stages: c.stages.map(s => {
+          if (s.id !== stageId) return s;
+          return { ...s, events: [...s.events, { ...event, id: uuidv4() }] };
+        }),
+      };
+    }));
+  }, []);
+
+  const advanceStage = useCallback((cycleId: string) => {
+    setCycles(prev => prev.map(c => {
+      if (c.id !== cycleId) return c;
+      const currentIdx = c.stages.findIndex(s => s.id === c.currentStageId);
+      if (currentIdx === -1) return c;
+      const nextStage = c.stages[currentIdx + 1];
+      const updatedStages = c.stages.map((s, idx) => {
+        if (idx === currentIdx) return { ...s, status: 'completed' as const, endDate: new Date().toISOString().slice(0, 10) };
+        if (idx === currentIdx + 1) return { ...s, status: 'active' as const, startDate: new Date().toISOString().slice(0, 10) };
+        return s;
+      });
+      return {
+        ...c,
+        stages: updatedStages,
+        currentStageId: nextStage?.id ?? c.currentStageId,
+      };
+    }));
+  }, []);
+
+  const completeCycle = useCallback((cycleId: string, endDate: string, notes?: string) => {
+    setCycles(prev => prev.map(c => {
+      if (c.id !== cycleId) return c;
+      return {
+        ...c,
+        status: 'completed' as const,
+        endDate,
+        notes: notes ?? c.notes,
+        stages: c.stages.map(s =>
+          s.status === 'active' ? { ...s, status: 'completed' as const, endDate } : s
+        ),
+      };
+    }));
+  }, []);
+
   return React.createElement(OrgContext.Provider, {
     value: {
       org, cycles, loading,
       createOrg, updateOrg, completeOnboarding,
       addEnterprise, updateEnterprise, removeEnterprise,
       addCycle, updateCycle, getCyclesForEnterprise, getActiveCycle,
+      addDailyRecord, addEvent, advanceStage, completeCycle,
     }
   }, children);
 }

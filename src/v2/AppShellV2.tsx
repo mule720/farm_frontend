@@ -97,11 +97,13 @@ export default function AppShellV2() {
       )}
 
       {/* Sidebar */}
-      <aside className={`
-        fixed lg:relative inset-y-0 left-0 z-50 flex flex-col bg-slate-900 transition-all duration-200
-        ${collapsed ? 'w-16' : 'w-60'}
-        ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-      `}>
+      <aside className={[
+        'fixed lg:relative inset-y-0 left-0 z-50 flex flex-col bg-slate-900 transition-all duration-200',
+        collapsed ? 'w-16' : 'w-60',
+        // Mobile: slide in/out. Desktop (lg): always visible via lg:translate-x-0
+        mobileOpen ? 'translate-x-0' : '-translate-x-full',
+        'lg:translate-x-0',
+      ].join(' ')}>
         {/* Logo */}
         <div className={`h-14 flex items-center border-b border-slate-800 ${collapsed ? 'justify-center px-2' : 'px-4 gap-2'}`}>
           <div className="w-7 h-7 bg-gradient-to-br from-green-400 to-emerald-600 rounded-lg flex items-center justify-center flex-shrink-0">
