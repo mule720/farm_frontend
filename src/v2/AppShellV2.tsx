@@ -8,6 +8,14 @@ import {
 } from 'lucide-react';
 import DynamicDashboard from '@/pages/dashboard/DynamicDashboard';
 import ProductionEngine from '@/pages/production/ProductionEngine';
+import ProcessingEngine from '@/pages/processing/ProcessingEngine';
+import InventoryEngine from '@/pages/inventory/InventoryEngine';
+import SalesEngine from '@/pages/sales/SalesEngine';
+import FinanceEngine from '@/pages/finance/FinanceEngine';
+import AgriFood from '@/pages/marketplace/AgriFood';
+import AgriSupply from '@/pages/marketplace/AgriSupply';
+import AgriServices from '@/pages/marketplace/AgriServices';
+import ReportsEngine from '@/pages/reports/ReportsEngine';
 
 type Page = 'dashboard' | 'production' | 'inventory' | 'sales' | 'marketplace-food'
            | 'marketplace-supply' | 'marketplace-services' | 'finance' | 'reports'
@@ -63,21 +71,21 @@ export default function AppShellV2() {
       case 'cycle':
         return <ProductionEngine onNavigate={navigate} />;
       case 'processing':
-        return <ComingSoon title="Processing Engine" icon="🏭" desc="Track processing batches, recipes, yields, and finished goods." />;
+        return <ProcessingEngine />;
       case 'inventory':
-        return <ComingSoon title="Inventory Engine" icon="📦" desc="Universal inventory — materials, batches, locations, and movements." />;
+        return <InventoryEngine />;
       case 'sales':
-        return <ComingSoon title="Sales" icon="🛒" desc="Customers, orders, invoices, and payments." />;
+        return <SalesEngine />;
       case 'finance':
-        return <ComingSoon title="Finance Engine" icon="💰" desc="Cost records, profitability per cycle, and financial reporting." />;
+        return <FinanceEngine />;
       case 'reports':
-        return <ComingSoon title="Reports" icon="📊" desc="Production reports, KPI trends, and analytics." />;
+        return <ReportsEngine />;
       case 'marketplace-food':
-        return <ComingSoon title="AgriFood Market" icon="🏪" desc="B2B + B2C food marketplace. Buy and sell fresh produce, livestock, and processed food." />;
+        return <AgriFood />;
       case 'marketplace-supply':
-        return <ComingSoon title="AgriSupply" icon="🚜" desc="Inputs marketplace — seeds, fertiliser, chemicals, equipment, and more." />;
+        return <AgriSupply />;
       case 'marketplace-services':
-        return <ComingSoon title="AgriServices" icon="🔧" desc="Services marketplace — vets, agronomists, equipment hire, transport, and finance." />;
+        return <AgriServices />;
       case 'config':
         return <ConfigPage org={org} onNavigate={navigate} />;
       default:
