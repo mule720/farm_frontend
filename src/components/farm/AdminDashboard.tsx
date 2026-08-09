@@ -720,7 +720,7 @@ function PlatformStaffPanel() {
       <div className="flex items-center justify-between">
         <div>
           <div className="font-semibold text-slate-800">Platform Staff</div>
-          <div className="text-xs text-slate-400">FarmPulse internal team members with admin access</div>
+          <div className="text-xs text-slate-400">AgroNexus internal team members with admin access</div>
         </div>
         <button onClick={() => setAdding(true)} className="flex items-center gap-1.5 text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg font-medium">
           <Plus className="w-3 h-3" />Add Staff Member
@@ -1036,7 +1036,7 @@ export default function AdminDashboard({ onBack }: Props) {
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <h1 className="font-bold text-white text-base leading-tight">FarmPulse Platform</h1>
+              <h1 className="font-bold text-white text-base leading-tight">AgroNexus Platform</h1>
               <p className="text-xs text-slate-400 truncate">Admin console · subscriber management · billing · onboarding</p>
             </div>
           </div>

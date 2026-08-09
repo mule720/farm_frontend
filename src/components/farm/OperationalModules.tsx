@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSubscription } from '@/contexts/SubscriptionContext';
 import { MODULE_CATALOG, PLAN_BUNDLES } from '@/lib/subscriptionData';
-import { useFarmPulse } from '@/components/AppLayout';
+import { useAgroNexus } from '@/components/AppLayout';
 import {
   Package, AlertTriangle, ShoppingCart, DollarSign, Users, Truck, Stethoscope,
   BarChart3, Plane, Wrench, Smartphone, Calendar, Leaf, CheckCircle2, Plus, Search, Loader2, X
@@ -1110,7 +1110,7 @@ export function MobileModule() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-gradient-to-br from-slate-900 to-slate-700 rounded-2xl p-8 text-white">
           <Smartphone className="w-12 h-12 mb-4" />
-          <h2 className="text-xl font-bold mb-2">FarmPulse Mobile</h2>
+          <h2 className="text-xl font-bold mb-2">AgroNexus Mobile</h2>
           <p className="text-sm text-slate-300 mb-6">Field workers capture data even without internet. Auto-syncs when back online.</p>
           <ul className="space-y-2 text-sm">
             {[
@@ -1211,7 +1211,7 @@ export function DailyPlanner() {
 // =============== SETTINGS ===============
 function PlanBillingCard() {
   const { planName, planId, enabledModules, monthlyAmount, trialDaysRemaining, isTrialExpired, maxUsers } = useSubscription();
-  const { openUpgrade } = useFarmPulse();
+  const { openUpgrade } = useAgroNexus();
   const [showModules, setShowModules] = useState(false);
   const bundle = PLAN_BUNDLES.find(p => p.id === planId);
   const paidModules = enabledModules.filter(id => !MODULE_CATALOG.find(m => m.id === id)?.isCore);

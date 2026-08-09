@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSubscription } from '@/contexts/SubscriptionContext';
-import { useFarmPulse } from '@/components/AppLayout';
+import { useAgroNexus } from '@/components/AppLayout';
 import { Lock } from 'lucide-react';
 
 interface SidebarProps {
@@ -87,7 +87,7 @@ const navGroups = [
 export default function Sidebar({ currentView, onNavigate, collapsed, onToggle }: SidebarProps) {
   const { hasPermission } = useAuth();
   const { isModuleEnabled } = useSubscription();
-  const { openUpgrade } = useFarmPulse();
+  const { openUpgrade } = useAgroNexus();
 
   return (
     <aside className={`${collapsed ? 'w-16' : 'w-64'} bg-slate-900 text-slate-100 transition-all duration-300 flex flex-col h-screen sticky top-0 overflow-y-auto`}>
@@ -98,7 +98,7 @@ export default function Sidebar({ currentView, onNavigate, collapsed, onToggle }
               <ShieldCheck className="w-5 h-5 text-white" />
             </div>
             <div>
-              <div className="font-bold text-white text-sm">FarmPulse</div>
+              <div className="font-bold text-white text-sm">AgroNexus</div>
               <div className="text-[10px] text-slate-400">Operations Suite</div>
             </div>
           </div>

@@ -9,19 +9,22 @@ import { Loader2, X, Zap, AlertTriangle } from 'lucide-react';
 
 type AppView = 'landing' | 'app' | 'admin';
 
-interface FarmPulseContextType {
+interface AgroNexusContextType {
   view: AppView;
   setView: (v: AppView) => void;
   openUpgrade: (moduleId: string) => void;
 }
 
-const FarmPulseContext = createContext<FarmPulseContextType | null>(null);
+const AgroNexusContext = createContext<AgroNexusContextType | null>(null);
 
-export function useFarmPulse() {
-  const ctx = useContext(FarmPulseContext);
-  if (!ctx) throw new Error('useFarmPulse must be inside FarmPulseProvider');
+export function useAgroNexus() {
+  const ctx = useContext(AgroNexusContext);
+  if (!ctx) throw new Error('useAgroNexus must be inside AgroNexusProvider');
   return ctx;
 }
+
+/** @deprecated use useAgroNexus */
+export const useFarmPulse = useAgroNexus;
 
 // ─── Trial banner ─────────────────────────────────────────────────────────────
 
@@ -37,7 +40,7 @@ function TrialBanner({ onUpgrade }: { onUpgrade: () => void }) {
         <div className="flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 flex-shrink-0" />
           <span className="font-medium">Your 14-day free trial has expired.</span>
-          <span className="text-red-200 hidden sm:inline">Choose a plan to continue using FarmPulse.</span>
+          <span className="text-red-200 hidden sm:inline">Choose a plan to continue using AgroNexus.</span>
         </div>
         <button onClick={onUpgrade} className="ml-4 px-3 py-1 bg-white text-red-700 rounded-lg text-xs font-semibold hover:bg-red-50 flex-shrink-0">
           Choose Plan →
@@ -95,7 +98,7 @@ function InnerLayout() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="flex items-center gap-3 text-slate-600">
-          <Loader2 className="w-5 h-5 animate-spin" /> Loading FarmPulse...
+          <Loader2 className="w-5 h-5 animate-spin" /> Loading AgroNexus...
         </div>
       </div>
     );
@@ -115,21 +118,21 @@ function InnerLayout() {
         <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
           <div className="bg-white rounded-xl border border-slate-200 p-8 max-w-md text-center shadow-sm">
             <h2 className="text-xl font-bold text-slate-900 mb-2">Access Denied</h2>
-            <p className="text-sm text-slate-600 mb-4">Platform Admin is restricted to FarmPulse staff only.</p>
+            <p className="text-sm text-slate-600 mb-4">Platform Admin is restricted to AgroNexus staff only.</p>
             <button onClick={() => setView('landing')} className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700">← Back</button>
           </div>
         </div>
       );
     }
     return (
-      <FarmPulseContext.Provider value={{ view, setView, openUpgrade: setUpgradeModule }}>
+      <AgroNexusContext.Provider value={{ view, setView, openUpgrade: setUpgradeModule }}>
         <AdminDashboard onBack={() => setView('landing')} />
-      </FarmPulseContext.Provider>
+      </AgroNexusContext.Provider>
     );
   }
 
   return (
-    <FarmPulseContext.Provider value={{ view, setView, openUpgrade: setUpgradeModule }}>
+    <AgroNexusContext.Provider value={{ view, setView, openUpgrade: setUpgradeModule }}>
       <div className="font-sans antialiased text-slate-900 bg-slate-50 min-h-screen flex flex-col">
         {view === 'landing' && (
           <Landing
@@ -150,7 +153,7 @@ function InnerLayout() {
         <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} initialMode={authMode} />
         {upgradeModule && <UpgradeModal moduleId={upgradeModule} onClose={() => setUpgradeModule(null)} />}
       </div>
-    </FarmPulseContext.Provider>
+    </AgroNexusContext.Provider>
   );
 }
 

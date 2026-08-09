@@ -1,4 +1,4 @@
-// FarmPulse - Smart agricultural data and recommendations engine
+// AgroNexus - Smart agricultural data and recommendations engine
 
 export type EnterpriseId =
   | 'poultry'

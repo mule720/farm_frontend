@@ -168,7 +168,7 @@ export function UpgradeModal({ moduleId, onClose }: UpgradeModalProps) {
               {isGeneral ? (
                 <>
                   <div className="text-xs font-semibold text-purple-200 uppercase tracking-wider mb-1">Upgrade Your Plan</div>
-                  <h2 className="text-xl font-bold">Unlock the full FarmPulse suite</h2>
+                  <h2 className="text-xl font-bold">Unlock the full AgroNexus suite</h2>
                   {trialDaysRemaining !== null && (
                     <p className="text-sm text-purple-100 mt-1">
                       {trialDaysRemaining > 0

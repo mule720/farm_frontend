@@ -25,7 +25,7 @@ export default function Landing({ onLaunchApp, onAdminLogin, onSignIn, onSignUp,
       await fetch('https://famous.ai/api/crm/69fd480a6269afb4fdd032f5/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, source, tags: ['farmpulse', 'waitlist', 'newsletter'] }),
+        body: JSON.stringify({ email, source, tags: ['agronexus', 'waitlist', 'newsletter'] }),
       });
     } catch (e) {}
     setSubmitted(true);
@@ -42,7 +42,7 @@ export default function Landing({ onLaunchApp, onAdminLogin, onSignIn, onSignUp,
             <div className="w-9 h-9 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center">
               <ShieldCheck className="w-5 h-5 text-white" />
             </div>
-            <div className="font-bold text-lg">FarmPulse</div>
+            <div className="font-bold text-lg">AgroNexus</div>
           </div>
           <nav className="hidden md:flex items-center gap-6 text-sm text-slate-600">
             <a href="#features" className="hover:text-green-600">Features</a>
@@ -82,7 +82,7 @@ export default function Landing({ onLaunchApp, onAdminLogin, onSignIn, onSignUp,
               for modern farms
             </h1>
             <p className="mt-6 text-lg text-slate-600 max-w-lg">
-              FarmPulse unifies poultry, piggery, fish, horticulture and more into one intelligent platform — with smart feeding, real-time analytics, and end-to-end financials.
+              AgroNexus unifies poultry, piggery, fish, horticulture and more into one intelligent platform — with smart feeding, real-time analytics, and end-to-end financials.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <button onClick={onLaunchApp} className="px-6 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 flex items-center gap-2">
@@ -180,7 +180,7 @@ export default function Landing({ onLaunchApp, onAdminLogin, onSignIn, onSignUp,
               <Brain className="w-3 h-3" /> AI Operations Engine
             </span>
             <h2 className="text-3xl md:text-4xl font-bold mb-4">Stop guessing. Start optimizing.</h2>
-            <p className="text-blue-100 mb-6">FarmPulse calculates daily feeding quantities, water requirements, vaccination schedules, and growth targets — automatically tailored to each batch's age, breed, and weight.</p>
+            <p className="text-blue-100 mb-6">AgroNexus calculates daily feeding quantities, water requirements, vaccination schedules, and growth targets — automatically tailored to each batch's age, breed, and weight.</p>
             <ul className="space-y-3">
               {[
                 'Daily feed quantity per batch & per animal',
@@ -253,7 +253,7 @@ export default function Landing({ onLaunchApp, onAdminLogin, onSignIn, onSignUp,
         <h2 className="text-3xl font-bold text-center mb-12">Trusted by Africa's leading agribusinesses</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {[
-            { quote: 'FarmPulse cut our feed wastage by 22% in the first 90 days. The AI feeding engine pays for itself.', name: 'Joseph Mwansa', role: 'GM, Afrivera Investments', country: 'Zambia' },
+            { quote: 'AgroNexus cut our feed wastage by 22% in the first 90 days. The AI feeding engine pays for itself.', name: 'Joseph Mwansa', role: 'GM, Afrivera Investments', country: 'Zambia' },
             { quote: 'We finally have visibility across 4 enterprises. Mortality is down, profits are up. Game changer.', name: 'Folake Adeyemi', role: 'CEO, Lagos Fresh', country: 'Nigeria' },
             { quote: 'The DRC export module saves us 15+ hours per shipment on paperwork alone. Brilliant.', name: 'Patrice Mbala', role: 'Director, Kinshasa Poultry', country: 'DR Congo' },
           ].map((t, i) => (
@@ -300,7 +300,7 @@ export default function Landing({ onLaunchApp, onAdminLogin, onSignIn, onSignUp,
               <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center">
                 <ShieldCheck className="w-4 h-4 text-white" />
               </div>
-              <div className="font-bold text-white">FarmPulse</div>
+              <div className="font-bold text-white">AgroNexus</div>
             </div>
             <p className="text-sm text-slate-400 max-w-sm">The complete operations management platform for modern African agribusiness. Built by farmers, for farmers.</p>
             <form onSubmit={(e) => handleSubscribe(e, 'footer-signup')} className="mt-4 flex gap-2 max-w-sm">
@@ -313,7 +313,7 @@ export default function Landing({ onLaunchApp, onAdminLogin, onSignIn, onSignUp,
           <FooterCol title="Resources" links={['Documentation', 'Help Center', 'API', 'Status', 'Security']} />
         </div>
         <div className="border-t border-slate-800 px-6 py-4 max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center text-xs text-slate-500">
-          <div>© 2026 FarmPulse Technologies Ltd. All rights reserved.</div>
+          <div>© 2026 AgroNexus Technologies Ltd. All rights reserved.</div>
           <div className="flex gap-4 mt-2 md:mt-0">
             <a href="#" className="hover:text-white">Terms</a>
             <a href="#" className="hover:text-white">Privacy</a>

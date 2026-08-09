@@ -69,7 +69,7 @@ export default function AuthModal({ open, onClose, initialMode = 'signin' }: Pro
               </h2>
               <p className="text-xs text-green-100">
                 {mode === 'signin'
-                  ? 'Sign in to FarmPulse'
+                  ? 'Sign in to AgroNexus'
                   : mode === 'signup'
                   ? 'Create your organisation account — you can add employees later'
                   : "We'll send a reset link to your email"}
