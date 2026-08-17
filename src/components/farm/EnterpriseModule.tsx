@@ -50,6 +50,48 @@ export default function EnterpriseModule({ enterpriseId }: Props) {
   const [recSaved, setRecSaved] = useState(false);
   const [recError, setRecError] = useState<string | null>(null);
 
+  // Edit record modal
+  const [editRec, setEditRec] = useState<any>(null);
+  const [editForm, setEditForm] = useState({ mortality: '0', feedKg: '', waterL: '', avgWeight: '', notes: '' });
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  function openEditRec(r: any) {
+    let d: any = {};
+    try { d = typeof r.data === 'string' ? JSON.parse(r.data) : (r.data ?? {}); } catch {}
+    setEditForm({
+      mortality:   d.mortality   != null ? String(d.mortality)   : '0',
+      feedKg:      d.feedKg      != null ? String(d.feedKg)      : '',
+      waterL:      d.waterL      != null ? String(d.waterL)      : '',
+      avgWeight:   d.avgWeightKg != null ? String(d.avgWeightKg) : '',
+      notes:       d.notes       ?? '',
+    });
+    setEditError(null);
+    setEditRec(r);
+  }
+
+  async function handleUpdateRecord(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editRec) return;
+    setEditError(null); setEditSubmitting(true);
+    try {
+      const data: any = { mortality: parseFloat(editForm.mortality) || 0 };
+      if (editForm.feedKg)    data.feedKg      = parseFloat(editForm.feedKg);
+      if (editForm.waterL)    data.waterL       = parseFloat(editForm.waterL);
+      if (editForm.avgWeight) data.avgWeightKg  = parseFloat(editForm.avgWeight);
+      if (editForm.notes)     data.notes        = editForm.notes;
+      await gqlRequest(`
+        mutation UpdRec($id: ID!, $data: JSONString!) { updateProductionRecord(id: $id, data: $data) { record { id recordDate data batch { id name } } } }
+      `, { id: editRec.id, data: JSON.stringify(data) });
+      setRecords(prev => prev.map(r => r.id === editRec.id ? { ...r, data } : r));
+      setEditRec(null);
+    } catch (err: any) {
+      setEditError(err.message ?? 'Update failed');
+    } finally {
+      setEditSubmitting(false);
+    }
+  }
+
   // Feeding standards editing
   const [editingSchedule, setEditingSchedule] = useState(false);
   const [feedingSchedule, setFeedingSchedule] = useState<FeedingStage[]>([]);
@@ -586,6 +628,7 @@ export default function EnterpriseModule({ enterpriseId }: Props) {
                     <th className="text-right px-4 py-2.5">Water (L)</th>
                     <th className="text-right px-4 py-2.5">Avg Wt (kg)</th>
                     <th className="text-left px-4 py-2.5">Notes</th>
+                    <th className="px-4 py-2.5"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -593,7 +636,7 @@ export default function EnterpriseModule({ enterpriseId }: Props) {
                     let d: any = {};
                     try { d = typeof r.data === 'string' ? JSON.parse(r.data) : r.data; } catch {}
                     return (
-                      <tr key={r.id} className="border-t border-slate-100 hover:bg-slate-50">
+                      <tr key={r.id} className="border-t border-slate-100 hover:bg-slate-50 group">
                         <td className="px-4 py-2.5 font-medium">{r.recordDate}</td>
                         <td className="px-4 py-2.5 text-slate-600">{r.batch?.name || '—'}</td>
                         <td className="px-4 py-2.5 text-right">
@@ -603,6 +646,15 @@ export default function EnterpriseModule({ enterpriseId }: Props) {
                         <td className="px-4 py-2.5 text-right">{d.waterL ?? '—'}</td>
                         <td className="px-4 py-2.5 text-right">{d.avgWeightKg ?? '—'}</td>
                         <td className="px-4 py-2.5 text-xs text-slate-500">{d.notes || '—'}</td>
+                        <td className="px-4 py-2.5">
+                          <button
+                            onClick={() => openEditRec(r)}
+                            title="Edit record"
+                            className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-all"
+                          >
+                            <Edit2 className="w-3 h-3" /> Edit
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -621,6 +673,70 @@ export default function EnterpriseModule({ enterpriseId }: Props) {
           enterpriseName={enterprise.name}
           batches={batches.map((b: any) => ({ id: b.id, name: b.name }))}
         />
+      )}
+
+      {/* ─── EDIT RECORD MODAL ───────────────────────────────────────────────── */}
+      {editRec && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100">
+              <div>
+                <h2 className="font-bold text-slate-900">Edit Record</h2>
+                <p className="text-xs text-slate-500">{editRec.recordDate} · {editRec.batch?.name || 'No batch'}</p>
+              </div>
+              <button onClick={() => setEditRec(null)}><X className="w-5 h-5 text-slate-400" /></button>
+            </div>
+            <form onSubmit={handleUpdateRecord} className="p-5 space-y-4">
+              {editError && <div className="px-3 py-2 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{editError}</div>}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Mortality (deaths)</label>
+                  <input type="number" min="0" step="1" value={editForm.mortality}
+                    onChange={e => setEditForm(f => ({ ...f, mortality: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Feed Issued (kg)</label>
+                  <input type="number" min="0" step="0.1" value={editForm.feedKg}
+                    onChange={e => setEditForm(f => ({ ...f, feedKg: e.target.value }))}
+                    placeholder="e.g. 120.5"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Water Consumed (L)</label>
+                  <input type="number" min="0" step="0.1" value={editForm.waterL}
+                    onChange={e => setEditForm(f => ({ ...f, waterL: e.target.value }))}
+                    placeholder="e.g. 250"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Avg Weight (kg)</label>
+                  <input type="number" min="0" step="0.01" value={editForm.avgWeight}
+                    onChange={e => setEditForm(f => ({ ...f, avgWeight: e.target.value }))}
+                    placeholder="e.g. 1.45"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Observations / Notes</label>
+                <textarea rows={2} value={editForm.notes}
+                  onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
+                  placeholder="Any observations..."
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm resize-none" />
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button type="button" onClick={() => setEditRec(null)}
+                  className="flex-1 py-2 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50">
+                  Cancel
+                </button>
+                <button type="submit" disabled={editSubmitting}
+                  className="flex-1 py-2 bg-green-600 rounded-xl text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60 flex items-center justify-center gap-2">
+                  {editSubmitting ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : <><Save className="w-4 h-4" /> Save Changes</>}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* ─── NEW BATCH MODAL ─────────────────────────────────────────────────── */}
