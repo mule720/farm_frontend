@@ -26,12 +26,13 @@ import SmartVision from '@/pages/ai/SmartVision';
 import WeatherModule from '@/pages/ai/WeatherModule';
 import SustainabilityModule from '@/pages/ai/SustainabilityModule';
 import SmartDevices from '@/pages/ai/SmartDevices';
+import WaterManagement from '@/pages/iot/WaterManagement';
 
 type Page = 'dashboard' | 'production' | 'inventory' | 'sales' | 'marketplace-food'
            | 'marketplace-supply' | 'marketplace-services' | 'finance' | 'reports'
            | 'config' | 'enterprise' | 'cycle' | 'new-cycle' | 'processing'
            | 'ai-predictive' | 'ai-financial' | 'ai-smart' | 'ai-vision'
-           | 'ai-weather' | 'ai-sustainability' | 'ai-devices';
+           | 'ai-weather' | 'ai-sustainability' | 'ai-devices' | 'iot-water';
 
 interface NavItem {
   id: Page;
@@ -59,6 +60,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'ai-weather',    label: 'Weather',         icon: <Cloud className="w-4 h-4" />,      section: 'ai' },
   { id: 'ai-sustainability', label: 'Sustainability', icon: <Leaf className="w-4 h-4" />,   section: 'ai' },
   { id: 'ai-devices',       label: 'Smart Devices',  icon: <Radio className="w-4 h-4" />,   section: 'ai' },
+  { id: 'iot-water',        label: 'Water Mgmt',     icon: <Zap className="w-4 h-4" />,      section: 'ai' },
   { id: 'config',        label: 'Settings',       icon: <Settings className="w-4 h-4" />,   section: 'bottom' },
 ];
 
@@ -115,6 +117,8 @@ export default function AppShellV2() {
         return <SustainabilityModule />;
       case 'ai-devices':
         return <SmartDevices />;
+      case 'iot-water':
+        return <WaterManagement />;
       case 'marketplace-food':
         return <AgriFood />;
       case 'marketplace-supply':

@@ -11,18 +11,139 @@ import { getTemplate } from '@/lib/templates';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type DeviceType =
-  | 'soil_moisture' | 'temperature' | 'humidity' | 'water_level'
-  | 'weight_scale'  | 'gas_detector'| 'gps_tracker'| 'ph_sensor'
-  | 'do_sensor'     | 'light_sensor'| 'wind_speed' | 'rain_gauge';
+// ─── Device families ─────────────────────────────────────────────────────────
 
-type Connectivity = 'lora' | 'nbiot' | 'wifi' | 'bluetooth';
+export type DeviceFamily =
+  | 'soil'       // Soil & Substrate
+  | 'weather'    // Weather Station
+  | 'water'      // Water & Irrigation
+  | 'aquaculture'// Pond / Aquaculture
+  | 'livestock'  // Livestock
+  | 'poultry'    // Poultry House
+  | 'energy'     // Energy Systems
+  | 'vision'     // Cameras & Vision
+  | 'machinery'  // Farm Machinery
+  | 'storage'    // Storage & Cold Chain
+  | 'general'    // Other / General
+
+export const DEVICE_FAMILIES: { id: DeviceFamily; label: string; emoji: string; color: string }[] = [
+  { id: 'soil',        label: 'Soil & Substrate', emoji: '🌱', color: 'bg-amber-100 text-amber-700 border-amber-200' },
+  { id: 'weather',     label: 'Weather Station',  emoji: '🌦', color: 'bg-sky-100 text-sky-700 border-sky-200' },
+  { id: 'water',       label: 'Water & Irrigation',emoji:'💧', color: 'bg-blue-100 text-blue-700 border-blue-200' },
+  { id: 'aquaculture', label: 'Aquaculture',       emoji: '🐟', color: 'bg-cyan-100 text-cyan-700 border-cyan-200' },
+  { id: 'livestock',   label: 'Livestock',         emoji: '🐄', color: 'bg-orange-100 text-orange-700 border-orange-200' },
+  { id: 'poultry',     label: 'Poultry House',     emoji: '🐔', color: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
+  { id: 'energy',      label: 'Energy',            emoji: '⚡', color: 'bg-violet-100 text-violet-700 border-violet-200' },
+  { id: 'vision',      label: 'Cameras & Vision',  emoji: '📷', color: 'bg-pink-100 text-pink-700 border-pink-200' },
+  { id: 'machinery',   label: 'Machinery',         emoji: '🚜', color: 'bg-slate-100 text-slate-700 border-slate-200' },
+  { id: 'storage',     label: 'Storage & Cold Chain',emoji:'🏭',color: 'bg-indigo-100 text-indigo-700 border-indigo-200' },
+  { id: 'general',     label: 'General / Other',   emoji: '📡', color: 'bg-slate-100 text-slate-600 border-slate-200' },
+];
+
+type DeviceType =
+  // Soil & Substrate
+  | 'soil_moisture' | 'soil_temperature' | 'soil_ec' | 'soil_ph'
+  | 'soil_npk'      | 'soil_salinity'    | 'soil_oxygen' | 'soil_compaction'
+  // Weather
+  | 'temperature'   | 'humidity'         | 'wind_speed'  | 'rain_gauge'
+  | 'solar_radiation'| 'atmospheric_pressure' | 'leaf_wetness' | 'evapotranspiration'
+  // Water & Irrigation
+  | 'water_level'   | 'flow_meter'       | 'pipe_pressure' | 'water_quality'
+  // Aquaculture
+  | 'do_sensor'     | 'ph_sensor'        | 'water_temperature' | 'ammonia_sensor'
+  | 'turbidity'     | 'tds_sensor'       | 'salinity_sensor'
+  // Livestock
+  | 'rfid_reader'   | 'gps_tracker'      | 'weight_scale' | 'livestock_health'
+  | 'activity_sensor'
+  // Poultry
+  | 'co2_sensor'    | 'ammonia_nh3'      | 'egg_counter'  | 'feed_meter'
+  | 'water_meter'
+  // Energy
+  | 'solar_panel'   | 'battery_bank'     | 'smart_meter'  | 'generator_sensor'
+  // Vision
+  | 'ip_camera'     | 'thermal_camera'   | 'motion_sensor'
+  // Machinery
+  | 'tractor_gps'   | 'fuel_sensor'      | 'engine_hours'
+  // Storage
+  | 'cold_storage_temp' | 'cold_storage_humidity' | 'grain_temp' | 'grain_moisture'
+  // General
+  | 'gas_detector'  | 'light_sensor';
+
+export const DEVICE_TYPE_META: Record<DeviceType, { label: string; unit: string; family: DeviceFamily; typical: number }> = {
+  // Soil
+  soil_moisture:          { label: 'Soil Moisture',       unit: '%',    family: 'soil',        typical: 35 },
+  soil_temperature:       { label: 'Soil Temperature',    unit: '°C',   family: 'soil',        typical: 22 },
+  soil_ec:                { label: 'Soil EC',             unit: 'mS/cm',family: 'soil',        typical: 0.8 },
+  soil_ph:                { label: 'Soil pH',             unit: 'pH',   family: 'soil',        typical: 6.5 },
+  soil_npk:               { label: 'Soil NPK',            unit: 'mg/kg',family: 'soil',        typical: 180 },
+  soil_salinity:          { label: 'Soil Salinity',       unit: 'dS/m', family: 'soil',        typical: 1.2 },
+  soil_oxygen:            { label: 'Soil O₂',             unit: '%',    family: 'soil',        typical: 18 },
+  soil_compaction:        { label: 'Soil Compaction',     unit: 'PSI',  family: 'soil',        typical: 140 },
+  // Weather
+  temperature:            { label: 'Air Temperature',     unit: '°C',   family: 'weather',     typical: 26 },
+  humidity:               { label: 'Humidity',            unit: '%',    family: 'weather',     typical: 65 },
+  wind_speed:             { label: 'Wind Speed',          unit: 'km/h', family: 'weather',     typical: 12 },
+  rain_gauge:             { label: 'Rainfall',            unit: 'mm',   family: 'weather',     typical: 0 },
+  solar_radiation:        { label: 'Solar Radiation',     unit: 'W/m²', family: 'weather',     typical: 620 },
+  atmospheric_pressure:   { label: 'Air Pressure',        unit: 'hPa',  family: 'weather',     typical: 1013 },
+  leaf_wetness:           { label: 'Leaf Wetness',        unit: '%',    family: 'weather',     typical: 20 },
+  evapotranspiration:     { label: 'ET₀',                 unit: 'mm/day',family:'weather',     typical: 4.2 },
+  // Water
+  water_level:            { label: 'Water Level',         unit: '%',    family: 'water',       typical: 72 },
+  flow_meter:             { label: 'Flow Rate',           unit: 'L/min',family: 'water',       typical: 80 },
+  pipe_pressure:          { label: 'Pipe Pressure',       unit: 'bar',  family: 'water',       typical: 2.4 },
+  water_quality:          { label: 'Water Quality',       unit: 'NTU',  family: 'water',       typical: 5 },
+  // Aquaculture
+  do_sensor:              { label: 'Dissolved Oxygen',    unit: 'mg/L', family: 'aquaculture', typical: 6.5 },
+  ph_sensor:              { label: 'Water pH',            unit: 'pH',   family: 'aquaculture', typical: 7.2 },
+  water_temperature:      { label: 'Water Temperature',   unit: '°C',   family: 'aquaculture', typical: 27 },
+  ammonia_sensor:         { label: 'Ammonia (NH₃)',       unit: 'mg/L', family: 'aquaculture', typical: 0.05 },
+  turbidity:              { label: 'Turbidity',           unit: 'NTU',  family: 'aquaculture', typical: 8 },
+  tds_sensor:             { label: 'TDS',                 unit: 'ppm',  family: 'aquaculture', typical: 320 },
+  salinity_sensor:        { label: 'Salinity',            unit: 'ppt',  family: 'aquaculture', typical: 0.5 },
+  // Livestock
+  rfid_reader:            { label: 'RFID Reader',         unit: 'tags', family: 'livestock',   typical: 0 },
+  gps_tracker:            { label: 'GPS Tracker',         unit: 'active',family:'livestock',   typical: 1 },
+  weight_scale:           { label: 'Weight Scale',        unit: 'kg',   family: 'livestock',   typical: 0 },
+  livestock_health:       { label: 'Health Sensor',       unit: '°C',   family: 'livestock',   typical: 38.5 },
+  activity_sensor:        { label: 'Activity Sensor',     unit: 'steps/hr',family:'livestock', typical: 240 },
+  // Poultry
+  co2_sensor:             { label: 'CO₂',                 unit: 'ppm',  family: 'poultry',     typical: 800 },
+  ammonia_nh3:            { label: 'Ammonia (NH₃ air)',   unit: 'ppm',  family: 'poultry',     typical: 8 },
+  egg_counter:            { label: 'Egg Counter',         unit: 'eggs', family: 'poultry',     typical: 0 },
+  feed_meter:             { label: 'Feed Consumption',    unit: 'kg',   family: 'poultry',     typical: 0 },
+  water_meter:            { label: 'Water Consumption',   unit: 'L',    family: 'poultry',     typical: 0 },
+  // Energy
+  solar_panel:            { label: 'Solar Output',        unit: 'kW',   family: 'energy',      typical: 2.4 },
+  battery_bank:           { label: 'Battery Level',       unit: '%',    family: 'energy',      typical: 78 },
+  smart_meter:            { label: 'Energy Consumption',  unit: 'kWh',  family: 'energy',      typical: 0 },
+  generator_sensor:       { label: 'Generator Fuel',      unit: '%',    family: 'energy',      typical: 62 },
+  // Vision
+  ip_camera:              { label: 'IP Camera',           unit: 'fps',  family: 'vision',      typical: 25 },
+  thermal_camera:         { label: 'Thermal Camera',      unit: '°C',   family: 'vision',      typical: 0 },
+  motion_sensor:          { label: 'Motion Sensor',       unit: 'events',family:'vision',      typical: 0 },
+  // Machinery
+  tractor_gps:            { label: 'Tractor GPS',         unit: 'km/h', family: 'machinery',   typical: 0 },
+  fuel_sensor:            { label: 'Fuel Level',          unit: '%',    family: 'machinery',   typical: 54 },
+  engine_hours:           { label: 'Engine Hours',        unit: 'hrs',  family: 'machinery',   typical: 0 },
+  // Storage
+  cold_storage_temp:      { label: 'Cold Room Temp',      unit: '°C',   family: 'storage',     typical: 4 },
+  cold_storage_humidity:  { label: 'Cold Room Humidity',  unit: '%',    family: 'storage',     typical: 85 },
+  grain_temp:             { label: 'Grain Temperature',   unit: '°C',   family: 'storage',     typical: 18 },
+  grain_moisture:         { label: 'Grain Moisture',      unit: '%',    family: 'storage',     typical: 12 },
+  // General
+  gas_detector:           { label: 'Gas Detector',        unit: 'ppm',  family: 'general',     typical: 0 },
+  light_sensor:           { label: 'Light Intensity',     unit: 'lux',  family: 'general',     typical: 800 },
+};
+
+type Connectivity = 'lora' | 'nbiot' | 'wifi' | 'bluetooth' | '4g' | 'zigbee' | 'modbus';
 type DeviceStatus = 'online' | 'offline' | 'warning' | 'critical';
 
 interface Device {
   id: string;
   name: string;
   type: DeviceType;
+  family: DeviceFamily;
   enterpriseId: string;
   location: string;
   connectivity: Connectivity;
@@ -62,59 +183,61 @@ const LS_DEVICES    = 'agronexus_v2_iot_devices';
 const LS_RULES      = 'agronexus_v2_iot_rules';
 const LS_ALERTS     = 'agronexus_v2_iot_alerts';
 
-const DEVICE_TYPE_DEFS: Record<DeviceType, { label: string; icon: React.ElementType; unit: string; min: number; max: number; color: string }> = {
-  soil_moisture: { label: 'Soil Moisture',    icon: Droplets,    unit: '%',     min: 0,   max: 100,  color: 'blue'   },
-  temperature:   { label: 'Temperature',      icon: Thermometer, unit: '°C',    min: -10, max: 60,   color: 'orange' },
-  humidity:      { label: 'Humidity',         icon: Wind,        unit: '%',     min: 0,   max: 100,  color: 'cyan'   },
-  water_level:   { label: 'Water Level',      icon: Droplets,    unit: '%',     min: 0,   max: 100,  color: 'blue'   },
-  weight_scale:  { label: 'Weight Scale',     icon: Scale,       unit: 'kg',    min: 0,   max: 5000, color: 'slate'  },
-  gas_detector:  { label: 'Gas Detector',     icon: Wind,        unit: 'ppm',   min: 0,   max: 1000, color: 'red'    },
-  gps_tracker:   { label: 'GPS Tracker',      icon: MapPin,      unit: 'loc',   min: 0,   max: 1,    color: 'green'  },
-  ph_sensor:     { label: 'pH Sensor',        icon: Droplets,    unit: 'pH',    min: 0,   max: 14,   color: 'purple' },
-  do_sensor:     { label: 'Dissolved O₂',     icon: Activity,    unit: 'mg/L',  min: 0,   max: 20,   color: 'teal'   },
-  light_sensor:  { label: 'Light Intensity',  icon: Zap,         unit: 'lux',   min: 0,   max: 100000, color: 'yellow'},
-  wind_speed:    { label: 'Wind Speed',       icon: Wind,        unit: 'km/h',  min: 0,   max: 200,  color: 'slate'  },
-  rain_gauge:    { label: 'Rainfall',         icon: Cloud,       unit: 'mm',    min: 0,   max: 300,  color: 'blue'   },
+// Icon mapping for device types (family-level icons)
+const FAMILY_ICON: Record<DeviceFamily, React.ElementType> = {
+  soil:        Droplets,
+  weather:     Wind,
+  water:       Droplets,
+  aquaculture: Activity,
+  livestock:   MapPin,
+  poultry:     Thermometer,
+  energy:      Zap,
+  vision:      Eye,
+  machinery:   Navigation,
+  storage:     Gauge,
+  general:     SignalLow,
 };
 
+function deviceIcon(type: DeviceType): React.ElementType {
+  const family = DEVICE_TYPE_META[type]?.family ?? 'general';
+  return FAMILY_ICON[family] ?? Activity;
+}
+
 const CONNECTIVITY_DEFS: Record<Connectivity, { label: string; icon: React.ElementType; color: string }> = {
-  lora:      { label: 'LoRaWAN',   icon: Radio,    color: 'purple' },
-  nbiot:     { label: 'NB-IoT',    icon: Signal,   color: 'blue'   },
-  wifi:      { label: 'Wi-Fi',     icon: Wifi,     color: 'green'  },
-  bluetooth: { label: 'Bluetooth', icon: Activity, color: 'indigo' },
+  lora:      { label: 'LoRaWAN',   icon: Radio,       color: 'purple' },
+  nbiot:     { label: 'NB-IoT',    icon: Signal,      color: 'blue'   },
+  wifi:      { label: 'Wi-Fi',     icon: Wifi,        color: 'green'  },
+  bluetooth: { label: 'Bluetooth', icon: Activity,    color: 'indigo' },
+  '4g':      { label: '4G/LTE',    icon: SignalHigh,  color: 'cyan'   },
+  zigbee:    { label: 'Zigbee',    icon: Radio,       color: 'orange' },
+  modbus:    { label: 'Modbus',    icon: Settings,    color: 'slate'  },
 };
 
 const SEED_DEVICES: Device[] = [
-  {
-    id: 'dev-1', name: 'Broiler House 1 — Temp', type: 'temperature', enterpriseId: '', location: 'Broiler House 1',
-    connectivity: 'lora', status: 'online', battery: 87, lastSeen: new Date().toISOString(),
-    reading: 28.4, unit: '°C', alertEnabled: true, alertMin: 15, alertMax: 35,
-  },
-  {
-    id: 'dev-2', name: 'Broiler House 1 — Humidity', type: 'humidity', enterpriseId: '', location: 'Broiler House 1',
-    connectivity: 'lora', status: 'warning', battery: 45, lastSeen: new Date().toISOString(),
-    reading: 82, unit: '%', alertEnabled: true, alertMax: 80,
-  },
-  {
-    id: 'dev-3', name: 'Borehole 1 — Water Level', type: 'water_level', enterpriseId: '', location: 'Borehole 1',
-    connectivity: 'nbiot', status: 'online', battery: 91, lastSeen: new Date().toISOString(),
-    reading: 61, unit: '%', alertEnabled: true, alertMin: 20,
-  },
-  {
-    id: 'dev-4', name: 'Fish Pond A — pH', type: 'ph_sensor', enterpriseId: '', location: 'Fish Pond A',
-    connectivity: 'nbiot', status: 'online', battery: 72, lastSeen: new Date().toISOString(),
-    reading: 7.2, unit: 'pH', alertEnabled: true, alertMin: 6.5, alertMax: 8.5,
-  },
-  {
-    id: 'dev-5', name: 'Fish Pond A — DO', type: 'do_sensor', enterpriseId: '', location: 'Fish Pond A',
-    connectivity: 'nbiot', status: 'critical', battery: 18, lastSeen: new Date().toISOString(),
-    reading: 3.1, unit: 'mg/L', alertEnabled: true, alertMin: 5,
-  },
-  {
-    id: 'dev-6', name: 'Cattle GPS Tracker', type: 'gps_tracker', enterpriseId: '', location: 'Pasture Block C',
-    connectivity: 'nbiot', status: 'online', battery: 64, lastSeen: new Date().toISOString(),
-    reading: null, unit: 'loc', alertEnabled: false,
-  },
+  // ── Poultry
+  { id:'dev-1',  name:'Broiler House 1 — Temp',       type:'temperature',    family:'poultry',     enterpriseId:'', location:'Broiler House 1',  connectivity:'lora',  status:'online',   battery:87, lastSeen:new Date().toISOString(), reading:28.4, unit:'°C',    alertEnabled:true, alertMin:15, alertMax:35 },
+  { id:'dev-2',  name:'Broiler House 1 — Humidity',   type:'humidity',       family:'poultry',     enterpriseId:'', location:'Broiler House 1',  connectivity:'lora',  status:'warning',  battery:45, lastSeen:new Date().toISOString(), reading:82,   unit:'%',     alertEnabled:true, alertMax:80 },
+  { id:'dev-6',  name:'Broiler House 1 — CO₂',        type:'co2_sensor',     family:'poultry',     enterpriseId:'', location:'Broiler House 1',  connectivity:'wifi',  status:'online',   battery:92, lastSeen:new Date().toISOString(), reading:1200, unit:'ppm',   alertEnabled:true, alertMax:2000 },
+  { id:'dev-7',  name:'Broiler House 1 — NH₃',        type:'ammonia_nh3',    family:'poultry',     enterpriseId:'', location:'Broiler House 1',  connectivity:'wifi',  status:'online',   battery:80, lastSeen:new Date().toISOString(), reading:12,   unit:'ppm',   alertEnabled:true, alertMax:25 },
+  // ── Aquaculture
+  { id:'dev-4',  name:'Fish Pond A — pH',             type:'ph_sensor',      family:'aquaculture', enterpriseId:'', location:'Fish Pond A',      connectivity:'nbiot', status:'online',   battery:72, lastSeen:new Date().toISOString(), reading:7.2,  unit:'pH',    alertEnabled:true, alertMin:6.5, alertMax:8.5 },
+  { id:'dev-5',  name:'Fish Pond A — DO',             type:'do_sensor',      family:'aquaculture', enterpriseId:'', location:'Fish Pond A',      connectivity:'nbiot', status:'critical', battery:18, lastSeen:new Date().toISOString(), reading:3.1,  unit:'mg/L',  alertEnabled:true, alertMin:5 },
+  { id:'dev-8',  name:'Fish Pond A — Temp',           type:'water_temperature',family:'aquaculture',enterpriseId:'', location:'Fish Pond A',      connectivity:'nbiot', status:'online',   battery:65, lastSeen:new Date().toISOString(), reading:27.4, unit:'°C',    alertEnabled:true, alertMin:20, alertMax:32 },
+  { id:'dev-9',  name:'Fish Pond A — Ammonia',        type:'ammonia_sensor', family:'aquaculture', enterpriseId:'', location:'Fish Pond A',      connectivity:'nbiot', status:'online',   battery:58, lastSeen:new Date().toISOString(), reading:0.08, unit:'mg/L',  alertEnabled:true, alertMax:0.5 },
+  // ── Soil
+  { id:'dev-10', name:'Field 1 — Soil Moisture 30cm', type:'soil_moisture',  family:'soil',        enterpriseId:'', location:'Field 1, Row 3',   connectivity:'lora',  status:'online',   battery:78, lastSeen:new Date().toISOString(), reading:41,   unit:'%',     alertEnabled:true, alertMin:25 },
+  { id:'dev-11', name:'Field 1 — Soil pH',            type:'soil_ph',        family:'soil',        enterpriseId:'', location:'Field 1',          connectivity:'lora',  status:'online',   battery:84, lastSeen:new Date().toISOString(), reading:6.4,  unit:'pH',    alertEnabled:true, alertMin:5.5, alertMax:7.5 },
+  { id:'dev-12', name:'Field 1 — Soil EC',            type:'soil_ec',        family:'soil',        enterpriseId:'', location:'Field 1',          connectivity:'lora',  status:'warning',  battery:31, lastSeen:new Date().toISOString(), reading:2.1,  unit:'mS/cm', alertEnabled:true, alertMax:2.0 },
+  // ── Water
+  { id:'dev-3',  name:'Borehole 1 — Water Level',     type:'water_level',    family:'water',       enterpriseId:'', location:'Borehole 1',       connectivity:'nbiot', status:'online',   battery:91, lastSeen:new Date().toISOString(), reading:61,   unit:'%',     alertEnabled:true, alertMin:20 },
+  // ── Weather
+  { id:'dev-13', name:'Weather Station — Main',       type:'temperature',    family:'weather',     enterpriseId:'', location:'Farm centre',       connectivity:'wifi',  status:'online',   battery:100, lastSeen:new Date().toISOString(), reading:26.8, unit:'°C',   alertEnabled:false },
+  { id:'dev-14', name:'Weather Station — Rain',       type:'rain_gauge',     family:'weather',     enterpriseId:'', location:'Farm centre',       connectivity:'wifi',  status:'online',   battery:100, lastSeen:new Date().toISOString(), reading:0,    unit:'mm',   alertEnabled:false },
+  // ── Livestock
+  { id:'dev-15', name:'Cattle GPS — Herd A',          type:'gps_tracker',    family:'livestock',   enterpriseId:'', location:'Grazing Zone A',   connectivity:'4g',    status:'online',   battery:72, lastSeen:new Date().toISOString(), reading:1,    unit:'active',alertEnabled:true },
+  // ── Energy
+  { id:'dev-16', name:'Solar Array — Output',         type:'solar_panel',    family:'energy',      enterpriseId:'', location:'Roof — main building',connectivity:'wifi', status:'online',  battery:100, lastSeen:new Date().toISOString(), reading:2.4,  unit:'kW',   alertEnabled:false },
+  { id:'dev-17', name:'Battery Bank — Level',         type:'battery_bank',   family:'energy',      enterpriseId:'', location:'Electrical room',  connectivity:'wifi',  status:'online',   battery:100, lastSeen:new Date().toISOString(), reading:78,   unit:'%',    alertEnabled:true, alertMin:20 },
 ];
 
 const SEED_RULES: AutomationRule[] = [
@@ -192,6 +315,8 @@ function ConnTag({ connectivity }: { connectivity: Connectivity }) {
   const colors: Record<string, string> = {
     purple: 'bg-purple-100 text-purple-700', blue: 'bg-blue-100 text-blue-700',
     green: 'bg-green-100 text-green-700', indigo: 'bg-indigo-100 text-indigo-700',
+    cyan: 'bg-cyan-100 text-cyan-700', orange: 'bg-orange-100 text-orange-700',
+    slate: 'bg-slate-100 text-slate-700',
   };
   return (
     <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium ${colors[def.color]}`}>
@@ -232,7 +357,7 @@ function AddDeviceModal({ enterprises, onSave, onClose }: {
   const [alertMin,      setAlertMin]     = useState('');
   const [alertMax,      setAlertMax]     = useState('');
 
-  const def = DEVICE_TYPE_DEFS[type];
+  const meta = DEVICE_TYPE_META[type];
 
   function save() {
     if (!name.trim()) return;
@@ -247,7 +372,8 @@ function AddDeviceModal({ enterprises, onSave, onClose }: {
       battery: 100,
       lastSeen: new Date().toISOString(),
       reading: null,
-      unit: def.unit,
+      family: meta?.family ?? 'general',
+      unit: meta?.unit ?? '',
       alertEnabled,
       alertMin: alertMin !== '' ? parseFloat(alertMin) : undefined,
       alertMax: alertMax !== '' ? parseFloat(alertMax) : undefined,
@@ -271,8 +397,12 @@ function AddDeviceModal({ enterprises, onSave, onClose }: {
             <div>
               <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-1">Sensor Type *</label>
               <select value={type} onChange={e => setType(e.target.value as DeviceType)} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
-                {(Object.entries(DEVICE_TYPE_DEFS) as [DeviceType, typeof DEVICE_TYPE_DEFS[DeviceType]][]).map(([k, v]) => (
-                  <option key={k} value={k}>{v.label}</option>
+                {DEVICE_FAMILIES.map(fam => (
+                  <optgroup key={fam.id} label={`${fam.emoji} ${fam.label}`}>
+                    {(Object.entries(DEVICE_TYPE_META) as [DeviceType, typeof DEVICE_TYPE_META[DeviceType]][]).filter(([,m]) => m.family === fam.id).map(([k, m]) => (
+                      <option key={k} value={k}>{m.label}</option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </div>
@@ -307,11 +437,11 @@ function AddDeviceModal({ enterprises, onSave, onClose }: {
           {alertEnabled && (
             <div className="grid grid-cols-2 gap-3 pl-6">
               <div>
-                <label className="text-xs font-semibold text-slate-600 block mb-1">Min ({def.unit})</label>
+                <label className="text-xs font-semibold text-slate-600 block mb-1">Min ({meta?.unit ?? ''})</label>
                 <input type="number" value={alertMin} onChange={e => setAlertMin(e.target.value)} placeholder="—" className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
               <div>
-                <label className="text-xs font-semibold text-slate-600 block mb-1">Max ({def.unit})</label>
+                <label className="text-xs font-semibold text-slate-600 block mb-1">Max ({meta?.unit ?? ''})</label>
                 <input type="number" value={alertMax} onChange={e => setAlertMax(e.target.value)} placeholder="—" className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
             </div>
@@ -406,7 +536,7 @@ function AddRuleModal({ devices, onSave, onClose }: {
 export default function SmartDevicesModule() {
   const { org } = useOrg();
   const { devices, rules, alertLogs, addDevice, updateDevice, deleteDevice, addRule, toggleRule, deleteRule } = useIoT();
-  const [tab, setTab] = useState<'dashboard' | 'devices' | 'rules' | 'alerts' | 'connectivity'>('dashboard');
+  const [tab, setTab] = useState<'families' | 'dashboard' | 'devices' | 'rules' | 'alerts' | 'connectivity'>('families');
   const [showAddDevice, setShowAddDevice] = useState(false);
   const [showAddRule,   setShowAddRule]   = useState(false);
   const [expandedDevice, setExpandedDevice] = useState<string | null>(null);
@@ -483,8 +613,9 @@ export default function SmartDevicesModule() {
       {/* Tabs */}
       <div className="flex gap-1 bg-slate-100 p-1 rounded-lg w-fit flex-wrap">
         {[
+          { id: 'families',     label: '🗂 Device Families' },
           { id: 'dashboard',    label: 'AI Dashboard' },
-          { id: 'devices',      label: 'Devices' },
+          { id: 'devices',      label: 'All Devices' },
           { id: 'rules',        label: 'Automation' },
           { id: 'alerts',       label: 'Alert Log' },
           { id: 'connectivity', label: 'Connectivity' },
@@ -494,6 +625,50 @@ export default function SmartDevicesModule() {
           </button>
         ))}
       </div>
+
+      {/* ── Device Families Overview ──────────────────────────────────────────── */}
+      {tab === 'families' && (
+        <div className="space-y-4">
+          <p className="text-sm text-slate-500">All connected devices grouped by category. Click a family to see its devices.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {DEVICE_FAMILIES.map(fam => {
+              const famDevices = devices.filter(d => (d.family ?? DEVICE_TYPE_META[d.type]?.family) === fam.id);
+              const online = famDevices.filter(d => d.status === 'online').length;
+              const warn = famDevices.filter(d => d.status === 'warning').length;
+              const crit = famDevices.filter(d => d.status === 'critical').length;
+              if (famDevices.length === 0) return null;
+              return (
+                <button key={fam.id} onClick={() => setTab('devices')}
+                  className={`bg-white border rounded-xl p-5 text-left hover:shadow-md transition-shadow ${crit > 0 ? 'border-red-200' : warn > 0 ? 'border-amber-200' : 'border-slate-200'}`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-3xl">{fam.emoji}</span>
+                    {crit > 0 && <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-bold">{crit} critical</span>}
+                    {crit === 0 && warn > 0 && <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-bold">{warn} warning</span>}
+                    {crit === 0 && warn === 0 && <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">All OK</span>}
+                  </div>
+                  <div className="font-semibold text-slate-800 text-sm mb-1">{fam.label}</div>
+                  <div className="text-2xl font-bold text-slate-900 mb-0.5">{famDevices.length}</div>
+                  <div className="text-xs text-slate-400">{online} online · {famDevices.length - online} offline</div>
+                  <div className="mt-3 flex flex-wrap gap-1">
+                    {famDevices.slice(0, 4).map(d => (
+                      <span key={d.id} className={`text-[9px] px-1.5 py-0.5 rounded border ${d.status === 'critical' ? 'bg-red-50 border-red-200 text-red-600' : d.status === 'warning' ? 'bg-amber-50 border-amber-200 text-amber-600' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
+                        {d.name.split('—')[1]?.trim() ?? d.name}
+                      </span>
+                    ))}
+                    {famDevices.length > 4 && <span className="text-[9px] text-slate-400">+{famDevices.length - 4} more</span>}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          {/* Devices with no family registered */}
+          {devices.filter(d => !d.family && !DEVICE_TYPE_META[d.type]).length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-700">
+              {devices.filter(d => !d.family && !DEVICE_TYPE_META[d.type]).length} device(s) have an unknown type and need to be re-registered.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── AI Dashboard ─────────────────────────────────────────────────────── */}
       {tab === 'dashboard' && (
@@ -505,8 +680,7 @@ export default function SmartDevicesModule() {
             <div className="space-y-2">
               <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Devices Needing Attention</div>
               {devices.filter(d => d.status === 'critical' || d.status === 'warning').map(d => {
-                const def = DEVICE_TYPE_DEFS[d.type];
-                const Icon = def.icon;
+                const Icon = deviceIcon(d.type);
                 const isCrit = d.status === 'critical';
                 return (
                   <div key={d.id} className={`flex items-center gap-4 rounded-xl border px-4 py-3 ${isCrit ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
@@ -550,14 +724,14 @@ export default function SmartDevicesModule() {
             <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">All Device Readings</div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {devices.map(d => {
-                const def = DEVICE_TYPE_DEFS[d.type];
-                const Icon = def.icon;
+                const Icon = deviceIcon(d.type);
+                const dMeta = DEVICE_TYPE_META[d.type];
                 return (
                   <div key={d.id} className="bg-white rounded-xl border border-slate-200 p-4">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <StatusDot status={d.status} />
-                        <span className="text-xs text-slate-500">{def.label}</span>
+                        <span className="text-xs text-slate-500">{dMeta?.label ?? d.type}</span>
                       </div>
                       <BatteryIcon pct={d.battery} />
                     </div>
@@ -585,8 +759,7 @@ export default function SmartDevicesModule() {
             </div>
           )}
           {devices.map(d => {
-            const def = DEVICE_TYPE_DEFS[d.type];
-            const Icon = def.icon;
+            const Icon = deviceIcon(d.type);
             const expanded = expandedDevice === d.id;
             const isAbove = d.alertMax !== undefined && d.reading !== null && d.reading > d.alertMax;
             const isBelow = d.alertMin !== undefined && d.reading !== null && d.reading < d.alertMin;
@@ -620,7 +793,7 @@ export default function SmartDevicesModule() {
                 {expanded && (
                   <div className="border-t border-slate-100 px-4 py-4 space-y-3">
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                      <div><span className="text-slate-400">Type</span><br /><span className="font-medium">{def.label}</span></div>
+                      <div><span className="text-slate-400">Type</span><br /><span className="font-medium">{DEVICE_TYPE_META[d.type]?.label ?? d.type}</span></div>
                       <div><span className="text-slate-400">Unit</span><br /><span className="font-medium">{d.unit}</span></div>
                       <div><span className="text-slate-400">Alert Min</span><br /><span className="font-medium">{d.alertMin ?? '—'}</span></div>
                       <div><span className="text-slate-400">Alert Max</span><br /><span className="font-medium">{d.alertMax ?? '—'}</span></div>
@@ -629,9 +802,10 @@ export default function SmartDevicesModule() {
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => {
-                          const typeDef = DEVICE_TYPE_DEFS[d.type];
-                          const range = typeDef.max - typeDef.min;
-                          const reading = parseFloat((typeDef.min + Math.random() * range).toFixed(2));
+                          const tm = DEVICE_TYPE_META[d.type];
+                          const typical = tm?.typical ?? 0;
+                          const variance = typical * 0.3 || 5;
+                          const reading = parseFloat((typical + (Math.random() - 0.5) * variance * 2).toFixed(2));
                           const isA = d.alertMax !== undefined && reading > d.alertMax;
                           const isB = d.alertMin !== undefined && reading < d.alertMin;
                           const status: DeviceStatus = isA || isB ? (Math.random() > 0.5 ? 'critical' : 'warning') : 'online';
@@ -767,6 +941,9 @@ export default function SmartDevicesModule() {
                 blue:   'from-blue-500 to-blue-700',
                 green:  'from-green-500 to-green-700',
                 indigo: 'from-indigo-500 to-indigo-700',
+                cyan:   'from-cyan-500 to-cyan-700',
+                orange: 'from-orange-500 to-orange-700',
+                slate:  'from-slate-500 to-slate-700',
               };
               return (
                 <div key={key} className={`rounded-xl bg-gradient-to-br ${colors[def.color]} p-4 text-white`}>
