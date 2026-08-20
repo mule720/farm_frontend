@@ -49,6 +49,7 @@ interface SaleOrder {
   discountAmt?: number;
   total: number;
   amountPaid: number;
+  cycleRef?: string;       // links revenue to a production cycle for P&L attribution
   notes?: string;
   createdAt: string;
 }
@@ -80,6 +81,9 @@ function useSales() {
   function updateCustomer(id: string, patch: Partial<Customer>) {
     setCustomers(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));
   }
+  function deleteCustomer(id: string) {
+    setCustomers(prev => prev.filter(c => c.id !== id));
+  }
   function addOrder(o: Omit<SaleOrder, 'id' | 'createdAt'>) {
     const order = { ...o, id: uuidv4(), createdAt: new Date().toISOString() };
     setOrders(prev => [...prev, order]);
@@ -97,8 +101,11 @@ function useSales() {
       // ── Order confirmed → reserve/stock_out inventory per line ─────────────
       if (old.status !== 'fulfilled' && next.status === 'fulfilled') {
         next.lines.forEach(line => {
+          // materialTypeId is a slug so InventoryEngine can match by name
+          const slug = line.description.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
           emit<StockOutPayload>('inventory:stock_out', {
             materialName: line.description,
+            materialTypeId: slug,
             quantity: line.qty,
             unit: line.unit,
             reason: `Sale order ${next.orderNumber} to ${next.customerName}`,
@@ -113,6 +120,7 @@ function useSales() {
           description: `Sales order ${next.orderNumber} — ${next.customerName}`,
           amount: next.total,
           date: today,
+          cycleRef: next.cycleRef,
           reference: next.orderNumber,
         }, 'sales');
       }
@@ -129,17 +137,19 @@ function useSales() {
     }));
   }
 
-  return { customers, orders, addCustomer, updateCustomer, addOrder, updateOrder, recordPayment };
+  return { customers, orders, addCustomer, updateCustomer, deleteCustomer, addOrder, updateOrder, recordPayment };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Root
 // ─────────────────────────────────────────────────────────────────────────────
 export default function SalesEngine() {
-  const { customers, orders, addCustomer, updateCustomer, addOrder, updateOrder, recordPayment } = useSales();
+  const { customers, orders, addCustomer, updateCustomer, deleteCustomer, addOrder, updateOrder, recordPayment } = useSales();
   const [tab, setTab] = useState<'orders' | 'customers'>('orders');
   const [search, setSearch] = useState('');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [showNewOrder, setShowNewOrder] = useState(false);
   const [showNewCustomer, setShowNewCustomer] = useState(false);
   const [payModal, setPayModal] = useState<string | null>(null); // orderId
@@ -204,28 +214,52 @@ export default function SalesEngine() {
           {tab === 'customers' && (
             <>
               {filteredCustomers.length === 0 && <EmptyMsg icon={<User />} msg="No customers yet." />}
-              {filteredCustomers.map(c => <CustomerRow key={c.id} customer={c} onClick={() => {}} />)}
+              {filteredCustomers.map(c => (
+                <CustomerRow key={c.id} customer={c}
+                  selected={selectedCustomerId === c.id}
+                  onClick={() => setSelectedCustomerId(c.id === selectedCustomerId ? null : c.id)} />
+              ))}
             </>
           )}
         </div>
       </div>
 
       {/* Right panel */}
-      <div className={`${selected ? 'flex' : 'hidden lg:flex'} flex-1 flex-col bg-slate-50 min-w-0`}>
-        {selected ? (
-          <OrderDetail
-            order={selected}
-            onClose={() => setSelectedOrderId(null)}
-            onUpdate={patch => updateOrder(selected.id, patch)}
-            onRecordPayment={() => setPayModal(selected.id)}
-          />
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-8">
-            <ShoppingCart className="w-12 h-12 mb-4 opacity-20" />
-            <p className="text-sm">Select an order to view details</p>
+      {(() => {
+        const selCust = selectedCustomerId ? customers.find(c => c.id === selectedCustomerId) : null;
+        const custOrders = selCust ? orders.filter(o => o.customerId === selCust.id) : [];
+        const showRight = selected || selCust;
+        return (
+          <div className={`${showRight ? 'flex' : 'hidden lg:flex'} flex-1 flex-col bg-slate-50 min-w-0`}>
+            {selected ? (
+              <OrderDetail
+                order={selected}
+                onClose={() => setSelectedOrderId(null)}
+                onUpdate={patch => updateOrder(selected.id, patch)}
+                onRecordPayment={() => setPayModal(selected.id)}
+              />
+            ) : selCust ? (
+              <CustomerDetail
+                customer={selCust}
+                orders={custOrders}
+                onClose={() => setSelectedCustomerId(null)}
+                onEdit={() => setEditingCustomer(selCust)}
+                onDelete={() => {
+                  if (window.confirm(`Delete ${selCust.name}? Their orders will remain.`)) {
+                    deleteCustomer(selCust.id);
+                    setSelectedCustomerId(null);
+                  }
+                }}
+              />
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-8">
+                <ShoppingCart className="w-12 h-12 mb-4 opacity-20" />
+                <p className="text-sm">Select an order or customer to view details</p>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        );
+      })()}
 
       {showNewOrder && (
         <NewOrderModal
@@ -239,6 +273,13 @@ export default function SalesEngine() {
         <AddCustomerModal
           onSave={data => { addCustomer(data); setShowNewCustomer(false); }}
           onClose={() => setShowNewCustomer(false)}
+        />
+      )}
+      {editingCustomer && (
+        <AddCustomerModal
+          initial={editingCustomer}
+          onSave={data => { updateCustomer(editingCustomer.id, data); setEditingCustomer(null); }}
+          onClose={() => setEditingCustomer(null)}
         />
       )}
       {payModal && (
@@ -296,10 +337,10 @@ function OrderRow({ order, selected, onClick }: { order: SaleOrder; selected: bo
 }
 
 // ─── Customer Row ─────────────────────────────────────────────────────────────
-function CustomerRow({ customer, onClick }: { customer: Customer; onClick: () => void }) {
+function CustomerRow({ customer, selected, onClick }: { customer: Customer; selected?: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick}
-      className="w-full text-left p-3 rounded-xl hover:bg-slate-50 border border-transparent flex items-center gap-2.5">
+      className={`w-full text-left p-3 rounded-xl border flex items-center gap-2.5 transition-colors ${selected ? 'bg-emerald-50 border-emerald-200' : 'hover:bg-slate-50 border-transparent'}`}>
       <div className="w-8 h-8 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">
         {customer.name.charAt(0).toUpperCase()}
       </div>
@@ -308,6 +349,73 @@ function CustomerRow({ customer, onClick }: { customer: Customer; onClick: () =>
         <div className="text-xs text-slate-400 capitalize">{customer.type}{customer.phone ? ` · ${customer.phone}` : ''}</div>
       </div>
     </button>
+  );
+}
+
+// ─── Customer Detail Panel ────────────────────────────────────────────────────
+function CustomerDetail({ customer, orders, onClose, onEdit, onDelete }: {
+  customer: Customer; orders: SaleOrder[];
+  onClose: () => void; onEdit: () => void; onDelete: () => void;
+}) {
+  const totalSpend = orders.filter(o => o.status !== 'cancelled').reduce((s, o) => s + o.total, 0);
+  const unpaid     = orders.filter(o => o.paymentStatus !== 'paid' && o.status !== 'cancelled').reduce((s, o) => s + (o.total - o.amountPaid), 0);
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 bg-white flex-shrink-0">
+        <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+          <ChevronRight className="w-5 h-5 rotate-180" />
+        </button>
+        <div className="flex gap-2">
+          <button onClick={onEdit} className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Edit</button>
+          <button onClick={onDelete} className="px-3 py-1.5 text-xs border border-red-200 rounded-lg text-red-600 hover:bg-red-50">Delete</button>
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto p-5 space-y-5">
+        <div className="bg-white rounded-xl border border-slate-200 p-5">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="w-14 h-14 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center text-2xl font-bold">
+              {customer.name.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <div className="font-bold text-slate-900 text-lg">{customer.name}</div>
+              <div className="text-sm text-slate-500 capitalize">{customer.type}</div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            {customer.phone && <div><span className="text-slate-400 text-xs block">Phone</span>{customer.phone}</div>}
+            {customer.email && <div><span className="text-slate-400 text-xs block">Email</span>{customer.email}</div>}
+            {customer.address && <div className="col-span-2"><span className="text-slate-400 text-xs block">Address</span>{customer.address}</div>}
+            {customer.notes && <div className="col-span-2"><span className="text-slate-400 text-xs block">Notes</span>{customer.notes}</div>}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <div className="text-xs text-slate-500 mb-1">Total Spend</div>
+            <div className="font-bold text-emerald-700">{totalSpend.toLocaleString()}</div>
+          </div>
+          <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <div className="text-xs text-slate-500 mb-1">Outstanding</div>
+            <div className={`font-bold ${unpaid > 0 ? 'text-red-600' : 'text-slate-400'}`}>{unpaid.toLocaleString()}</div>
+          </div>
+        </div>
+        {orders.length > 0 && (
+          <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <h3 className="font-semibold text-slate-900 text-sm mb-3">Order History ({orders.length})</h3>
+            <div className="space-y-2">
+              {orders.slice().sort((a,b) => b.date.localeCompare(a.date)).map(o => (
+                <div key={o.id} className="flex items-center justify-between text-xs">
+                  <div>
+                    <span className="font-medium text-slate-700">{o.orderNumber}</span>
+                    <span className="text-slate-400 ml-2">{o.date}</span>
+                  </div>
+                  <span className="font-semibold text-slate-800">{o.total.toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -588,14 +696,15 @@ function NewOrderModal({ customers, onAddCustomer, onSave, onClose }: {
 }
 
 // ─── Add Customer Modal ────────────────────────────────────────────────────────
-function AddCustomerModal({ onSave, onClose }: { onSave: (c: Omit<Customer, 'id' | 'createdAt'>) => void; onClose: () => void }) {
-  const [form, setForm] = useState<Omit<Customer, 'id' | 'createdAt'>>({ name: '', type: 'individual' });
+function AddCustomerModal({ onSave, onClose, initial }: { onSave: (c: Omit<Customer, 'id' | 'createdAt'>) => void; onClose: () => void; initial?: Customer }) {
+  const [form, setForm] = useState<Omit<Customer, 'id' | 'createdAt'>>({ name: initial?.name ?? '', type: initial?.type ?? 'individual', phone: initial?.phone, email: initial?.email, address: initial?.address, notes: initial?.notes });
   function set(k: keyof typeof form, v: any) { setForm(f => ({ ...f, [k]: v })); }
+  const isEdit = !!initial;
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-sm">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-          <h3 className="font-bold text-slate-900">Add Customer</h3>
+          <h3 className="font-bold text-slate-900">{isEdit ? 'Edit Customer' : 'Add Customer'}</h3>
           <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg"><X className="w-4 h-4" /></button>
         </div>
         <div className="p-5 space-y-3">
@@ -612,7 +721,7 @@ function AddCustomerModal({ onSave, onClose }: { onSave: (c: Omit<Customer, 'id'
         <div className="px-5 py-4 border-t border-slate-100 flex gap-3">
           <button onClick={onClose} className="flex-1 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-600">Cancel</button>
           <button onClick={() => onSave(form)} disabled={!form.name.trim()}
-            className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">Add</button>
+            className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">{isEdit ? 'Save Changes' : 'Add'}</button>
         </div>
       </div>
     </div>

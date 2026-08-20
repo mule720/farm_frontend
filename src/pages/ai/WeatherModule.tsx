@@ -12,15 +12,31 @@ interface DayForecast {
   advisory: string;
 }
 
-const FORECAST: DayForecast[] = [
-  { date: '2026-06-05', day: 'Today', condition: 'partly_cloudy', temp_min: 12, temp_max: 24, rain_pct: 15, rainfall_mm: 0, advisory: 'Good day for field operations. Low rain risk.' },
-  { date: '2026-06-06', day: 'Sat', condition: 'light_rain', temp_min: 10, temp_max: 20, rain_pct: 65, rainfall_mm: 8, advisory: 'Light rain expected. Hold off on spraying.' },
-  { date: '2026-06-07', day: 'Sun', condition: 'heavy_rain', temp_min: 9, temp_max: 18, rain_pct: 85, rainfall_mm: 22, advisory: 'Heavy rain. Ensure drainage is clear.' },
-  { date: '2026-06-08', day: 'Mon', condition: 'cloudy', temp_min: 11, temp_max: 21, rain_pct: 30, rainfall_mm: 2, advisory: 'Cloudy. Suitable for transplanting seedlings.' },
-  { date: '2026-06-09', day: 'Tue', condition: 'sunny', temp_min: 14, temp_max: 27, rain_pct: 5, rainfall_mm: 0, advisory: 'Sunny and warm. Good for drying and harvesting.' },
-  { date: '2026-06-10', day: 'Wed', condition: 'sunny', temp_min: 15, temp_max: 28, rain_pct: 5, rainfall_mm: 0, advisory: 'Clear skies. Irrigate morning/evening to reduce evaporation.' },
-  { date: '2026-06-11', day: 'Thu', condition: 'partly_cloudy', temp_min: 13, temp_max: 25, rain_pct: 20, rainfall_mm: 1, advisory: 'Mild day. Good for planting and fertilizing.' },
-];
+// Generate a 7-day forecast anchored to today's real date
+function buildForecast(): DayForecast[] {
+  const CONDITIONS: Array<{ condition: string; temp_min: number; temp_max: number; rain_pct: number; rainfall_mm: number; advisory: string }> = [
+    { condition: 'partly_cloudy', temp_min: 12, temp_max: 24, rain_pct: 15, rainfall_mm: 0, advisory: 'Good day for field operations. Low rain risk.' },
+    { condition: 'light_rain',    temp_min: 10, temp_max: 20, rain_pct: 65, rainfall_mm: 8, advisory: 'Light rain expected. Hold off on spraying.' },
+    { condition: 'heavy_rain',    temp_min:  9, temp_max: 18, rain_pct: 85, rainfall_mm: 22, advisory: 'Heavy rain. Ensure drainage is clear.' },
+    { condition: 'cloudy',        temp_min: 11, temp_max: 21, rain_pct: 30, rainfall_mm: 2, advisory: 'Cloudy. Suitable for transplanting seedlings.' },
+    { condition: 'sunny',         temp_min: 14, temp_max: 27, rain_pct: 5,  rainfall_mm: 0, advisory: 'Sunny and warm. Good for drying and harvesting.' },
+    { condition: 'sunny',         temp_min: 15, temp_max: 28, rain_pct: 5,  rainfall_mm: 0, advisory: 'Clear skies. Irrigate morning/evening to reduce evaporation.' },
+    { condition: 'partly_cloudy', temp_min: 13, temp_max: 25, rain_pct: 20, rainfall_mm: 1, advisory: 'Mild day. Good for planting and fertilizing.' },
+  ];
+  const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const base = new Date();
+  return CONDITIONS.map((c, i) => {
+    const d = new Date(base);
+    d.setDate(base.getDate() + i);
+    return {
+      date: d.toISOString().slice(0, 10),
+      day: i === 0 ? 'Today' : DAY_NAMES[d.getDay()],
+      ...c,
+    };
+  });
+}
+
+const FORECAST: DayForecast[] = buildForecast();
 
 const CONDITION_ICONS: Record<string, React.ReactNode> = {
   sunny: <Sun className="w-6 h-6 text-amber-400" />,
@@ -41,11 +57,12 @@ interface FieldNDVI {
   date: string;
 }
 
+const TODAY_STR = new Date().toISOString().slice(0, 10);
 const NDVI_FIELDS: FieldNDVI[] = [
-  { name: 'Field A', crop: 'Maize', area_ha: 2.5, ndvi: 0.72, health: 'Excellent', stage: 'Vegetative', date: '2026-06-01' },
-  { name: 'Field B', crop: 'Tomatoes', area_ha: 1.2, ndvi: 0.58, health: 'Good', stage: 'Flowering', date: '2026-06-01' },
-  { name: 'Field C', crop: 'Soybeans', area_ha: 3.0, ndvi: 0.41, health: 'Fair', stage: 'Vegetative', date: '2026-06-01' },
-  { name: 'Orchard', crop: 'Citrus', area_ha: 3.8, ndvi: 0.63, health: 'Good', stage: 'Fruiting', date: '2026-06-01' },
+  { name: 'Field A', crop: 'Maize', area_ha: 2.5, ndvi: 0.72, health: 'Excellent', stage: 'Vegetative', date: TODAY_STR },
+  { name: 'Field B', crop: 'Tomatoes', area_ha: 1.2, ndvi: 0.58, health: 'Good', stage: 'Flowering', date: TODAY_STR },
+  { name: 'Field C', crop: 'Soybeans', area_ha: 3.0, ndvi: 0.41, health: 'Fair', stage: 'Vegetative', date: TODAY_STR },
+  { name: 'Orchard', crop: 'Citrus', area_ha: 3.8, ndvi: 0.63, health: 'Good', stage: 'Fruiting', date: TODAY_STR },
 ];
 
 function ndviColor(v: number) {

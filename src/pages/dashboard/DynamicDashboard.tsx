@@ -15,81 +15,108 @@ interface DashboardProps {
 
 // ─── Category KPI definitions ─────────────────────────────────────────────────
 // Each category gets a set of KPI "slots" that are shown on its enterprise card
+// realValue receives the active cycle and returns a value derived from stored data.
+// Return '—' if the data isn't available (e.g. requires IoT / daily records).
 interface CategoryKPI {
   key: string;
   label: string;
   unit: string;
   icon: React.ReactNode;
-  mockValue: () => string | number;
+  realValue: (cycle: ProductionCycle | undefined) => string | number;
   color: string;
+}
+
+// ─── Real-value helpers ───────────────────────────────────────────────────────
+// Derive what we can from production cycle data; return '—' for sensor-only data.
+function unitQty(cycle: ProductionCycle | undefined): number {
+  return (cycle?.productionUnits ?? []).reduce((s, u) => s + (u.quantity ?? 0), 0);
+}
+function daysInStage(cycle: ProductionCycle | undefined): number {
+  const stage = cycle?.stages.find(s => s.id === cycle.currentStageId);
+  if (!stage?.startDate) return 0;
+  return Math.max(0, Math.floor((Date.now() - new Date(stage.startDate).getTime()) / 86400000));
+}
+function daysToEnd(cycle: ProductionCycle | undefined): number | '—' {
+  const stage = cycle?.stages.find(s => s.id === cycle.currentStageId);
+  if (!stage?.targetEndDate) return '—';
+  const diff = Math.ceil((new Date(stage.targetEndDate).getTime() - Date.now()) / 86400000);
+  return Math.max(0, diff);
+}
+function areaFromUnits(cycle: ProductionCycle | undefined): string | '—' {
+  const u = (cycle?.productionUnits ?? []).find(u => ['ha', 'hectare', 'm²', 'm2'].includes((u.unit ?? '').toLowerCase()));
+  return u ? u.quantity.toFixed(2) : '—';
+}
+function countFromUnits(cycle: ProductionCycle | undefined, unitLabel: string): number | '—' {
+  const u = (cycle?.productionUnits ?? []).find(u => u.unit?.toLowerCase().includes(unitLabel.toLowerCase()));
+  return u ? u.quantity : unitQty(cycle) || '—';
 }
 
 const CATEGORY_KPIS: Record<string, CategoryKPI[]> = {
   poultry: [
-    { key: 'flock', label: 'Flock Count', unit: 'birds', icon: <Users className="w-3.5 h-3.5" />, mockValue: () => Math.floor(Math.random() * 800 + 200) * 10, color: 'amber' },
-    { key: 'mortality', label: 'Mortality Rate', unit: '%', icon: <Heart className="w-3.5 h-3.5" />, mockValue: () => (Math.random() * 2.5 + 0.5).toFixed(1), color: 'red' },
-    { key: 'egg', label: 'Egg Production', unit: 'trays/day', icon: <Egg className="w-3.5 h-3.5" />, mockValue: () => Math.floor(Math.random() * 80 + 20), color: 'yellow' },
-    { key: 'fcr', label: 'Feed Conv. Ratio', unit: 'FCR', icon: <Scale className="w-3.5 h-3.5" />, mockValue: () => (Math.random() * 0.5 + 1.6).toFixed(2), color: 'blue' },
+    { key: 'flock', label: 'Flock Count', unit: 'birds', icon: <Users className="w-3.5 h-3.5" />, realValue: (c) => unitQty(c) || '—', color: 'amber' },
+    { key: 'age', label: 'Days in Stage', unit: 'days', icon: <Heart className="w-3.5 h-3.5" />, realValue: (c) => daysInStage(c), color: 'red' },
+    { key: 'stage', label: 'Current Stage', unit: '', icon: <Activity className="w-3.5 h-3.5" />, realValue: (c) => c?.stages.find(s => s.id === c.currentStageId)?.name ?? '—', color: 'yellow' },
+    { key: 'harvest', label: 'Days to End', unit: 'days', icon: <Scale className="w-3.5 h-3.5" />, realValue: (c) => daysToEnd(c), color: 'blue' },
   ],
   livestock: [
-    { key: 'herd', label: 'Herd Count', unit: 'animals', icon: <Users className="w-3.5 h-3.5" />, mockValue: () => Math.floor(Math.random() * 150 + 20), color: 'orange' },
-    { key: 'milk', label: 'Milk Yield', unit: 'L/day', icon: <Droplets className="w-3.5 h-3.5" />, mockValue: () => Math.floor(Math.random() * 200 + 50), color: 'blue' },
-    { key: 'weight', label: 'Avg Weight Gain', unit: 'kg/wk', icon: <TrendingUp className="w-3.5 h-3.5" />, mockValue: () => (Math.random() * 1.5 + 0.5).toFixed(1), color: 'green' },
-    { key: 'health', label: 'Health Alerts', unit: 'issues', icon: <AlertTriangle className="w-3.5 h-3.5" />, mockValue: () => Math.floor(Math.random() * 3), color: 'red' },
+    { key: 'herd', label: 'Herd Count', unit: 'animals', icon: <Users className="w-3.5 h-3.5" />, realValue: (c) => unitQty(c) || '—', color: 'orange' },
+    { key: 'age', label: 'Days in Stage', unit: 'days', icon: <Droplets className="w-3.5 h-3.5" />, realValue: (c) => daysInStage(c), color: 'blue' },
+    { key: 'stage', label: 'Current Stage', unit: '', icon: <TrendingUp className="w-3.5 h-3.5" />, realValue: (c) => c?.stages.find(s => s.id === c.currentStageId)?.name ?? '—', color: 'green' },
+    { key: 'harvest', label: 'Days to End', unit: 'days', icon: <AlertTriangle className="w-3.5 h-3.5" />, realValue: (c) => daysToEnd(c), color: 'red' },
   ],
   aquaculture: [
-    { key: 'biomass', label: 'Biomass', unit: 'kg', icon: <Scale className="w-3.5 h-3.5" />, mockValue: () => Math.floor(Math.random() * 2000 + 500), color: 'blue' },
-    { key: 'water_temp', label: 'Water Temp', unit: '°C', icon: <Thermometer className="w-3.5 h-3.5" />, mockValue: () => (Math.random() * 4 + 24).toFixed(1), color: 'cyan' },
-    { key: 'do', label: 'Dissolved O₂', unit: 'mg/L', icon: <Wind className="w-3.5 h-3.5" />, mockValue: () => (Math.random() * 2 + 5).toFixed(1), color: 'teal' },
-    { key: 'fcr', label: 'Feed Conv. Ratio', unit: 'FCR', icon: <Scale className="w-3.5 h-3.5" />, mockValue: () => (Math.random() * 0.5 + 1.4).toFixed(2), color: 'green' },
+    { key: 'fish', label: 'Fish Stocked', unit: '', icon: <Scale className="w-3.5 h-3.5" />, realValue: (c) => countFromUnits(c, 'fish'), color: 'blue' },
+    { key: 'ponds', label: 'Ponds / Tanks', unit: '', icon: <Thermometer className="w-3.5 h-3.5" />, realValue: (c) => countFromUnits(c, 'pond') !== '—' ? countFromUnits(c, 'pond') : countFromUnits(c, 'tank'), color: 'cyan' },
+    { key: 'stage', label: 'Current Stage', unit: '', icon: <Wind className="w-3.5 h-3.5" />, realValue: (c) => c?.stages.find(s => s.id === c.currentStageId)?.name ?? '—', color: 'teal' },
+    { key: 'harvest', label: 'Days to End', unit: 'days', icon: <Scale className="w-3.5 h-3.5" />, realValue: (c) => daysToEnd(c), color: 'green' },
   ],
   crops: [
-    { key: 'area', label: 'Area Planted', unit: 'ha', icon: <Leaf className="w-3.5 h-3.5" />, mockValue: () => (Math.random() * 20 + 2).toFixed(1), color: 'green' },
-    { key: 'growth', label: 'Growth Stage', unit: '', icon: <Sun className="w-3.5 h-3.5" />, mockValue: () => ['Germination','Vegetative','Flowering','Maturity'][Math.floor(Math.random()*4)], color: 'yellow' },
-    { key: 'rainfall', label: 'Rainfall', unit: 'mm', icon: <Droplets className="w-3.5 h-3.5" />, mockValue: () => Math.floor(Math.random() * 30 + 5), color: 'blue' },
-    { key: 'pests', label: 'Pest Alerts', unit: 'issues', icon: <Bug className="w-3.5 h-3.5" />, mockValue: () => Math.floor(Math.random() * 2), color: 'red' },
+    { key: 'area', label: 'Area Planted', unit: 'ha', icon: <Leaf className="w-3.5 h-3.5" />, realValue: (c) => areaFromUnits(c), color: 'green' },
+    { key: 'stage', label: 'Current Stage', unit: '', icon: <Sun className="w-3.5 h-3.5" />, realValue: (c) => c?.stages.find(s => s.id === c.currentStageId)?.name ?? '—', color: 'yellow' },
+    { key: 'age', label: 'Days in Stage', unit: 'days', icon: <Droplets className="w-3.5 h-3.5" />, realValue: (c) => daysInStage(c), color: 'blue' },
+    { key: 'harvest', label: 'Days to End', unit: 'days', icon: <Bug className="w-3.5 h-3.5" />, realValue: (c) => daysToEnd(c), color: 'red' },
   ],
   horticulture: [
-    { key: 'area', label: 'Area Planted', unit: 'ha', icon: <Leaf className="w-3.5 h-3.5" />, mockValue: () => (Math.random() * 5 + 0.5).toFixed(2), color: 'green' },
-    { key: 'yield', label: 'Yield Forecast', unit: 'kg/ha', icon: <TrendingUp className="w-3.5 h-3.5" />, mockValue: () => Math.floor(Math.random() * 5000 + 1000), color: 'emerald' },
-    { key: 'irrigation', label: 'Irrigation', unit: 'L/day', icon: <Droplets className="w-3.5 h-3.5" />, mockValue: () => Math.floor(Math.random() * 800 + 100), color: 'blue' },
-    { key: 'harvest', label: 'Days to Harvest', unit: 'days', icon: <Calendar className="w-3.5 h-3.5" />, mockValue: () => Math.floor(Math.random() * 40 + 5), color: 'amber' },
+    { key: 'area', label: 'Area Planted', unit: 'ha', icon: <Leaf className="w-3.5 h-3.5" />, realValue: (c) => areaFromUnits(c), color: 'green' },
+    { key: 'plants', label: 'Plant Count', unit: '', icon: <TrendingUp className="w-3.5 h-3.5" />, realValue: (c) => countFromUnits(c, 'plant'), color: 'emerald' },
+    { key: 'stage', label: 'Current Stage', unit: '', icon: <Droplets className="w-3.5 h-3.5" />, realValue: (c) => c?.stages.find(s => s.id === c.currentStageId)?.name ?? '—', color: 'blue' },
+    { key: 'harvest', label: 'Days to Harvest', unit: 'days', icon: <Calendar className="w-3.5 h-3.5" />, realValue: (c) => daysToEnd(c), color: 'amber' },
   ],
   greenhouse: [
-    { key: 'temp', label: 'Temperature', unit: '°C', icon: <Thermometer className="w-3.5 h-3.5" />, mockValue: () => (Math.random() * 5 + 22).toFixed(1), color: 'orange' },
-    { key: 'humidity', label: 'Humidity', unit: '%', icon: <Droplets className="w-3.5 h-3.5" />, mockValue: () => Math.floor(Math.random() * 20 + 60), color: 'blue' },
-    { key: 'light', label: 'Light Intensity', unit: 'klux', icon: <Sun className="w-3.5 h-3.5" />, mockValue: () => (Math.random() * 10 + 10).toFixed(1), color: 'yellow' },
-    { key: 'harvest', label: 'Days to Harvest', unit: 'days', icon: <Calendar className="w-3.5 h-3.5" />, mockValue: () => Math.floor(Math.random() * 20 + 3), color: 'emerald' },
+    { key: 'area', label: 'Growing Area', unit: 'm²', icon: <Thermometer className="w-3.5 h-3.5" />, realValue: (c) => areaFromUnits(c), color: 'orange' },
+    { key: 'plants', label: 'Plants', unit: '', icon: <Droplets className="w-3.5 h-3.5" />, realValue: (c) => countFromUnits(c, 'plant'), color: 'blue' },
+    { key: 'stage', label: 'Current Stage', unit: '', icon: <Sun className="w-3.5 h-3.5" />, realValue: (c) => c?.stages.find(s => s.id === c.currentStageId)?.name ?? '—', color: 'yellow' },
+    { key: 'harvest', label: 'Days to Harvest', unit: 'days', icon: <Calendar className="w-3.5 h-3.5" />, realValue: (c) => daysToEnd(c), color: 'emerald' },
   ],
   orchard: [
-    { key: 'trees', label: 'Trees', unit: 'count', icon: <Leaf className="w-3.5 h-3.5" />, mockValue: () => Math.floor(Math.random() * 200 + 50), color: 'green' },
-    { key: 'flowering', label: 'Flowering Stage', unit: '', icon: <Sun className="w-3.5 h-3.5" />, mockValue: () => ['Pre-flowering','Full bloom','Fruit set','Maturing'][Math.floor(Math.random()*4)], color: 'pink' },
-    { key: 'irrigation', label: 'Irrigation', unit: 'L/tree/day', icon: <Droplets className="w-3.5 h-3.5" />, mockValue: () => (Math.random() * 30 + 5).toFixed(1), color: 'blue' },
-    { key: 'yield', label: 'Yield Forecast', unit: 'tonnes', icon: <TrendingUp className="w-3.5 h-3.5" />, mockValue: () => (Math.random() * 10 + 1).toFixed(1), color: 'emerald' },
+    { key: 'trees', label: 'Trees', unit: '', icon: <Leaf className="w-3.5 h-3.5" />, realValue: (c) => countFromUnits(c, 'tree'), color: 'green' },
+    { key: 'area', label: 'Plot Area', unit: 'ha', icon: <Sun className="w-3.5 h-3.5" />, realValue: (c) => areaFromUnits(c), color: 'pink' },
+    { key: 'stage', label: 'Current Stage', unit: '', icon: <Droplets className="w-3.5 h-3.5" />, realValue: (c) => c?.stages.find(s => s.id === c.currentStageId)?.name ?? '—', color: 'blue' },
+    { key: 'harvest', label: 'Days to End', unit: 'days', icon: <TrendingUp className="w-3.5 h-3.5" />, realValue: (c) => daysToEnd(c), color: 'emerald' },
   ],
   apiary: [
-    { key: 'hives', label: 'Active Hives', unit: 'hives', icon: <Target className="w-3.5 h-3.5" />, mockValue: () => Math.floor(Math.random() * 30 + 5), color: 'amber' },
-    { key: 'honey', label: 'Honey Yield', unit: 'kg/hive', icon: <DollarSign className="w-3.5 h-3.5" />, mockValue: () => (Math.random() * 10 + 5).toFixed(1), color: 'yellow' },
-    { key: 'queen', label: 'Queen Status', unit: '', icon: <Heart className="w-3.5 h-3.5" />, mockValue: () => ['Healthy','To inspect','Replace'][Math.floor(Math.random()*3)], color: 'green' },
-    { key: 'mites', label: 'Mite Count', unit: '/100 bees', icon: <Bug className="w-3.5 h-3.5" />, mockValue: () => Math.floor(Math.random() * 5), color: 'red' },
+    { key: 'hives', label: 'Active Hives', unit: '', icon: <Target className="w-3.5 h-3.5" />, realValue: (c) => countFromUnits(c, 'hive'), color: 'amber' },
+    { key: 'age', label: 'Days in Cycle', unit: 'days', icon: <DollarSign className="w-3.5 h-3.5" />, realValue: (c) => c?.startDate ? Math.floor((Date.now() - new Date(c.startDate).getTime()) / 86400000) : '—', color: 'yellow' },
+    { key: 'stage', label: 'Current Stage', unit: '', icon: <Heart className="w-3.5 h-3.5" />, realValue: (c) => c?.stages.find(s => s.id === c.currentStageId)?.name ?? '—', color: 'green' },
+    { key: 'harvest', label: 'Days to End', unit: 'days', icon: <Bug className="w-3.5 h-3.5" />, realValue: (c) => daysToEnd(c), color: 'red' },
   ],
   mushroom: [
-    { key: 'blocks', label: 'Growing Blocks', unit: 'count', icon: <Package className="w-3.5 h-3.5" />, mockValue: () => Math.floor(Math.random() * 500 + 50), color: 'stone' },
-    { key: 'humidity', label: 'Humidity', unit: '%', icon: <Droplets className="w-3.5 h-3.5" />, mockValue: () => Math.floor(Math.random() * 10 + 80), color: 'blue' },
-    { key: 'temp', label: 'Temperature', unit: '°C', icon: <Thermometer className="w-3.5 h-3.5" />, mockValue: () => (Math.random() * 4 + 20).toFixed(1), color: 'orange' },
-    { key: 'yield', label: 'Daily Harvest', unit: 'kg', icon: <Scale className="w-3.5 h-3.5" />, mockValue: () => (Math.random() * 20 + 5).toFixed(1), color: 'green' },
+    { key: 'blocks', label: 'Growing Blocks', unit: '', icon: <Package className="w-3.5 h-3.5" />, realValue: (c) => countFromUnits(c, 'block'), color: 'stone' },
+    { key: 'age', label: 'Days in Stage', unit: 'days', icon: <Droplets className="w-3.5 h-3.5" />, realValue: (c) => daysInStage(c), color: 'blue' },
+    { key: 'stage', label: 'Current Stage', unit: '', icon: <Thermometer className="w-3.5 h-3.5" />, realValue: (c) => c?.stages.find(s => s.id === c.currentStageId)?.name ?? '—', color: 'orange' },
+    { key: 'harvest', label: 'Days to End', unit: 'days', icon: <Scale className="w-3.5 h-3.5" />, realValue: (c) => daysToEnd(c), color: 'green' },
   ],
   processing: [
-    { key: 'throughput', label: 'Daily Throughput', unit: 'kg', icon: <Activity className="w-3.5 h-3.5" />, mockValue: () => Math.floor(Math.random() * 5000 + 500), color: 'slate' },
-    { key: 'efficiency', label: 'Efficiency', unit: '%', icon: <Zap className="w-3.5 h-3.5" />, mockValue: () => Math.floor(Math.random() * 15 + 80), color: 'green' },
-    { key: 'waste', label: 'Waste Rate', unit: '%', icon: <AlertTriangle className="w-3.5 h-3.5" />, mockValue: () => (Math.random() * 5 + 2).toFixed(1), color: 'amber' },
-    { key: 'batches', label: 'Batches Today', unit: 'batches', icon: <BarChart3 className="w-3.5 h-3.5" />, mockValue: () => Math.floor(Math.random() * 8 + 1), color: 'blue' },
+    { key: 'stage', label: 'Current Stage', unit: '', icon: <Activity className="w-3.5 h-3.5" />, realValue: (c) => c?.stages.find(s => s.id === c.currentStageId)?.name ?? '—', color: 'slate' },
+    { key: 'age', label: 'Days in Stage', unit: 'days', icon: <Zap className="w-3.5 h-3.5" />, realValue: (c) => daysInStage(c), color: 'green' },
+    { key: 'stages_done', label: 'Stages Done', unit: '', icon: <AlertTriangle className="w-3.5 h-3.5" />, realValue: (c) => c ? `${c.stages.filter(s => s.status === 'completed').length}/${c.stages.length}` : '—', color: 'amber' },
+    { key: 'harvest', label: 'Days to End', unit: 'days', icon: <BarChart3 className="w-3.5 h-3.5" />, realValue: (c) => daysToEnd(c), color: 'blue' },
   ],
   services: [
-    { key: 'jobs', label: 'Active Jobs', unit: 'jobs', icon: <Activity className="w-3.5 h-3.5" />, mockValue: () => Math.floor(Math.random() * 15 + 2), color: 'violet' },
-    { key: 'clients', label: 'Clients', unit: 'count', icon: <Users className="w-3.5 h-3.5" />, mockValue: () => Math.floor(Math.random() * 30 + 5), color: 'blue' },
-    { key: 'revenue', label: 'Revenue MTD', unit: 'K', icon: <DollarSign className="w-3.5 h-3.5" />, mockValue: () => (Math.random() * 50 + 5).toFixed(1), color: 'green' },
-    { key: 'rating', label: 'Avg Rating', unit: '/5', icon: <Heart className="w-3.5 h-3.5" />, mockValue: () => (Math.random() * 1 + 4).toFixed(1), color: 'amber' },
+    { key: 'stage', label: 'Current Stage', unit: '', icon: <Activity className="w-3.5 h-3.5" />, realValue: (c) => c?.stages.find(s => s.id === c.currentStageId)?.name ?? '—', color: 'violet' },
+    { key: 'age', label: 'Days in Cycle', unit: 'days', icon: <Users className="w-3.5 h-3.5" />, realValue: (c) => c?.startDate ? Math.floor((Date.now() - new Date(c.startDate).getTime()) / 86400000) : '—', color: 'blue' },
+    { key: 'stages_done', label: 'Stages Done', unit: '', icon: <DollarSign className="w-3.5 h-3.5" />, realValue: (c) => c ? `${c.stages.filter(s => s.status === 'completed').length}/${c.stages.length}` : '—', color: 'green' },
+    { key: 'harvest', label: 'Days to End', unit: 'days', icon: <Heart className="w-3.5 h-3.5" />, realValue: (c) => daysToEnd(c), color: 'amber' },
   ],
 };
 
@@ -291,7 +318,7 @@ function EnterpriseCard({
       {activeCycle && (
         <div className="grid grid-cols-4 divide-x divide-slate-100 border-b border-slate-100">
           {catKpis.map(kpi => (
-            <CategoryKPICell key={kpi.key} kpi={kpi} />
+            <CategoryKPICell key={kpi.key} kpi={kpi} cycle={activeCycle} />
           ))}
         </div>
       )}
@@ -365,7 +392,7 @@ function EnterpriseCard({
 
 // ─── Category KPI cell inside enterprise card ─────────────────────────────────
 
-function CategoryKPICell({ kpi }: { kpi: CategoryKPI }) {
+function CategoryKPICell({ kpi, cycle }: { kpi: CategoryKPI; cycle: ProductionCycle | undefined }) {
   const colorMap: Record<string, string> = {
     amber: 'text-amber-600', yellow: 'text-yellow-600', red: 'text-red-500',
     blue: 'text-blue-600', green: 'text-green-600', cyan: 'text-cyan-600',
@@ -373,7 +400,7 @@ function CategoryKPICell({ kpi }: { kpi: CategoryKPI }) {
     pink: 'text-pink-600', slate: 'text-slate-500', violet: 'text-violet-600',
     stone: 'text-stone-600',
   };
-  const val = kpi.mockValue();
+  const val = kpi.realValue(cycle);
   return (
     <div className="px-2 py-2.5 text-center">
       <div className={`flex justify-center mb-1 ${colorMap[kpi.color] ?? 'text-slate-500'}`}>

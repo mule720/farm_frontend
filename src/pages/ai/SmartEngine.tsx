@@ -47,8 +47,10 @@ export default function SmartEngine() {
       const cat = tpl?.category ?? 'crops';
       const norm = getNorm(cat);
 
-      // Estimate animal count from initial stage data or cycle name
-      const initialCount = (c as any).initialCount ?? 100;
+      // Sum quantity from all production units (birds, animals, fish, area, etc.)
+      const initialCount = c.productionUnits && c.productionUnits.length > 0
+        ? c.productionUnits.reduce((s, u) => s + (u.quantity ?? 0), 0)
+        : 100;
       const daysSince = c.startDate
         ? Math.floor((Date.now() - new Date(c.startDate).getTime()) / 86400000)
         : 0;

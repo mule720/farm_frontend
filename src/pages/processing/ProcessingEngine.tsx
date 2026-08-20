@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { ProcessingBatch, ProcessingRecipe, OutputRouting } from '@/lib/types';
 import { v4 as uuidv4 } from 'uuid';
-import { emit, type StockInPayload, type StockOutPayload } from '@/lib/bus';
+import { emit, type StockInPayload, type StockOutPayload, type CostPayload } from '@/lib/bus';
 
 // ─── Built-in recipe templates ────────────────────────────────────────────────
 const DEFAULT_RECIPES: ProcessingRecipe[] = [
@@ -163,7 +163,7 @@ function useBatches() {
         });
       }
 
-      // ── Batch completed: emit stock_in for each output produced ─────────────
+      // ── Batch completed: emit stock_in for each output + emit finance:cost ─────
       if (old.status !== 'completed' && next.status === 'completed') {
         (next.actualOutputs ?? []).forEach(out => {
           if (!out.actualQty || out.actualQty <= 0) return;
@@ -178,6 +178,19 @@ function useBatches() {
             qualityStatus: next.qualityStatus ?? 'pending',
           }, 'processing');
         });
+
+        // Emit batch total cost to Finance so it appears automatically
+        const totalCost = (next.totalCost ?? 0) + (next.laborCost ?? 0) + (next.overheadCost ?? 0);
+        if (totalCost > 0) {
+          emit<CostPayload>('finance:cost', {
+            category: 'Processing',
+            description: `Processing batch: ${next.recipeId} (${next.batchNumber ?? id.slice(0, 6)})`,
+            amount: totalCost,
+            date: next.endDate ?? today,
+            cycleRef: next.cycleRef,
+            reference: `batch:${id}`,
+          }, 'processing');
+        }
       }
 
       return updated;
@@ -196,10 +209,12 @@ function useBatches() {
 // Root
 // ─────────────────────────────────────────────────────────────────────────────
 export default function ProcessingEngine() {
-  const { batches, recipes, addBatch, updateBatch } = useBatches();
+  const { batches, recipes, addBatch, updateBatch, addRecipe } = useBatches();
   const [tab, setTab] = useState<'batches' | 'recipes'>('batches');
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
   const [showNewBatch, setShowNewBatch] = useState(false);
+  const [preselectedRecipeId, setPreselectedRecipeId] = useState<string | null>(null);
+  const [showNewRecipe, setShowNewRecipe] = useState(false);
 
   const grouped = {
     active:    batches.filter(b => b.status === 'in_progress'),
@@ -221,9 +236,9 @@ export default function ProcessingEngine() {
               <h2 className="font-bold text-slate-900">Processing Engine</h2>
               <p className="text-xs text-slate-500">{batches.length} batch{batches.length !== 1 ? 'es' : ''}</p>
             </div>
-            <button onClick={() => setShowNewBatch(true)}
+            <button onClick={() => tab === 'batches' ? setShowNewBatch(true) : setShowNewRecipe(true)}
               className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-medium hover:bg-purple-700">
-              <Plus className="w-3.5 h-3.5" /> New Batch
+              <Plus className="w-3.5 h-3.5" /> {tab === 'batches' ? 'New Batch' : 'New Recipe'}
             </button>
           </div>
           {/* Sub-tabs */}
@@ -257,7 +272,7 @@ export default function ProcessingEngine() {
               )}
             </>
           ) : (
-            <RecipeList recipes={recipes} onStartBatch={r => { setTab('batches'); setShowNewBatch(true); }} />
+            <RecipeList recipes={recipes} onStartBatch={r => { setPreselectedRecipeId(r.id); setTab('batches'); setShowNewBatch(true); }} />
           )}
         </div>
       </div>
@@ -282,8 +297,15 @@ export default function ProcessingEngine() {
       {showNewBatch && (
         <NewBatchModal
           recipes={recipes}
-          onSave={(data) => { const b = addBatch(data); setSelectedBatchId(b.id); setShowNewBatch(false); }}
-          onClose={() => setShowNewBatch(false)}
+          defaultRecipeId={preselectedRecipeId ?? undefined}
+          onSave={(data) => { const b = addBatch(data); setSelectedBatchId(b.id); setShowNewBatch(false); setPreselectedRecipeId(null); }}
+          onClose={() => { setShowNewBatch(false); setPreselectedRecipeId(null); }}
+        />
+      )}
+      {showNewRecipe && (
+        <NewRecipeModal
+          onSave={(r) => { addRecipe(r); setShowNewRecipe(false); }}
+          onClose={() => setShowNewRecipe(false)}
         />
       )}
     </div>
@@ -722,12 +744,13 @@ function CostsTab({ batch, onUpdate }: { batch: ProcessingBatch; onUpdate: (p: P
 // ─────────────────────────────────────────────────────────────────────────────
 // New Batch Modal
 // ─────────────────────────────────────────────────────────────────────────────
-function NewBatchModal({ recipes, onSave, onClose }: {
+function NewBatchModal({ recipes, defaultRecipeId, onSave, onClose }: {
   recipes: ProcessingRecipe[];
+  defaultRecipeId?: string;
   onSave: (data: Omit<ProcessingBatch, 'id'>) => void;
   onClose: () => void;
 }) {
-  const [recipeId, setRecipeId] = useState(recipes[0]?.id ?? '');
+  const [recipeId, setRecipeId] = useState(defaultRecipeId ?? recipes[0]?.id ?? '');
   const [batchNum, setBatchNum] = useState(() => `BATCH-${new Date().toISOString().slice(0, 7).replace('-', '')}-${String(Math.floor(Math.random() * 900) + 100)}`);
   const [startDate, setStart]  = useState(new Date().toISOString().slice(0, 10));
 
@@ -814,6 +837,68 @@ function SLabel({ label, count, color }: { label: string; count: number; color: 
   return (
     <div className={`px-3 py-1 text-xs font-semibold uppercase tracking-wider ${c[color] ?? c.slate} flex items-center gap-2`}>
       {label}<span className="bg-slate-100 text-slate-500 rounded-full px-1.5 py-0.5 text-[10px]">{count}</span>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// New Recipe Modal
+// ─────────────────────────────────────────────────────────────────────────────
+function NewRecipeModal({ onSave, onClose }: {
+  onSave: (r: Omit<ProcessingRecipe, 'id'>) => void;
+  onClose: () => void;
+}) {
+  const [name, setName]   = useState('');
+  const [desc, setDesc]   = useState('');
+  const [steps, setSteps] = useState('');
+
+  const inp2 = "w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500";
+
+  function save() {
+    if (!name.trim()) return;
+    onSave({
+      orgId: '',
+      name: name.trim(),
+      description: desc.trim(),
+      inputs: [],
+      outputs: [],
+      steps: steps.split('\n').map(s => s.trim()).filter(Boolean),
+      laborHoursPerBatch: 0,
+      equipment: [],
+      active: true,
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <h3 className="font-bold text-slate-900">Create Recipe</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">Recipe Name *</label>
+            <input className={inp2} required value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Sausage Casing" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">Description</label>
+            <input className={inp2} value={desc} onChange={e => setDesc(e.target.value)} placeholder="Brief description of what this recipe produces" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">Processing Steps (one per line)</label>
+            <textarea className={inp2} rows={4} value={steps} onChange={e => setSteps(e.target.value)} placeholder={"Step 1: Prepare materials\nStep 2: Process\nStep 3: Package"} />
+          </div>
+          <p className="text-xs text-slate-400">Inputs and outputs can be added after creation via the recipe editor.</p>
+        </div>
+        <div className="px-5 py-4 border-t border-slate-100 flex gap-3">
+          <button onClick={onClose} className="flex-1 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
+          <button onClick={save} disabled={!name.trim()}
+            className="flex-1 py-2.5 bg-purple-600 text-white rounded-xl text-sm font-medium hover:bg-purple-700 disabled:opacity-50">
+            Create Recipe
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
