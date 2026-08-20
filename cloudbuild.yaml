@@ -1,0 +1,17 @@
+steps:
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - build
+      - -t
+      - "us-central1-docker.pkg.dev/agrinexus-farm/agronexus/frontend:latest"
+      - --build-arg
+      - "VITE_API_URL=https://api.agrinuxes.com/graphql/"
+      - .
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - push
+      - "us-central1-docker.pkg.dev/agrinexus-farm/agronexus/frontend:latest"
+images:
+  - "us-central1-docker.pkg.dev/agrinexus-farm/agronexus/frontend:latest"
+options:
+  logging: CLOUD_LOGGING_ONLY

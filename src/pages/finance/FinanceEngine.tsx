@@ -2,12 +2,13 @@
 // AgroNexus v2 — Finance Engine
 // Cost records, income, profitability per cycle, P&L dashboard
 // ─────────────────────────────────────────────────────────────────────────────
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Plus, X, DollarSign, TrendingUp, TrendingDown, BarChart3,
   ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+import { consume, type CostPayload, type IncomePayload } from '@/lib/bus';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type TxCategory = 'feed' | 'medicine' | 'seed' | 'fertiliser' | 'labour' | 'equipment' | 'transport' | 'utilities' | 'marketing' | 'repairs' | 'other_cost' | 'sale_income' | 'grant' | 'other_income';
@@ -44,7 +45,74 @@ function useFinance() {
     setTransactions(prev => prev.filter(t => t.id !== id));
   }
 
+  // ─── Consume bus events ──────────────────────────────────────────────────────
+  // Finance engine drains finance:cost and finance:income events from the bus
+  useEffect(() => {
+    function drainBus() {
+      const costs = consume<CostPayload>('finance:cost');
+      const incomes = consume<IncomePayload>('finance:income');
+
+      if (costs.length === 0 && incomes.length === 0) return;
+
+      setTransactions(prev => {
+        const newTxs: Transaction[] = [];
+
+        costs.forEach(p => {
+          newTxs.push({
+            id: uuidv4(),
+            type: 'expense',
+            category: inferCostCategory(p.category),
+            description: p.description,
+            amount: p.amount,
+            date: p.date,
+            cycleRef: p.cycleRef,
+            reference: p.reference,
+            notes: 'Auto-recorded from production engine',
+            createdAt: new Date().toISOString(),
+          });
+        });
+
+        incomes.forEach(p => {
+          newTxs.push({
+            id: uuidv4(),
+            type: 'income',
+            category: 'sale_income',
+            description: p.description,
+            amount: p.amount,
+            date: p.date,
+            cycleRef: p.cycleRef,
+            reference: p.reference,
+            notes: 'Auto-recorded from production engine',
+            createdAt: new Date().toISOString(),
+          });
+        });
+
+        return [...prev, ...newTxs];
+      });
+    }
+
+    drainBus();
+    const interval = setInterval(drainBus, 10_000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return { transactions, addTransaction, deleteTransaction };
+}
+
+// Map free-text cost category from bus payload → TxCategory enum
+function inferCostCategory(category: string): TxCategory {
+  const c = category.toLowerCase();
+  if (/feed|fodder|silage/.test(c))          return 'feed';
+  if (/medicine|vet|vaccination|treatment/.test(c)) return 'medicine';
+  if (/seed|seedling/.test(c))               return 'seed';
+  if (/fertiliser|fertilizer/.test(c))       return 'fertiliser';
+  if (/labour|wage|salary/.test(c))          return 'labour';
+  if (/equipment|machinery/.test(c))         return 'equipment';
+  if (/transport|delivery/.test(c))          return 'transport';
+  if (/utility|electric|water|fuel/.test(c)) return 'utilities';
+  if (/repair|maintenance/.test(c))          return 'repairs';
+  return 'other_cost';
 }
 
 // ─── Category metadata ────────────────────────────────────────────────────────

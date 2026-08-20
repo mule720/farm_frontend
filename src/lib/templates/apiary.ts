@@ -1,0 +1,217 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Apiary Templates: Honey Bee (Langstroth & Top-Bar), Stingless Bee
+// ─────────────────────────────────────────────────────────────────────────────
+import type { ProductionTemplate } from '../types';
+
+// ─── HONEY BEE — LANGSTROTH ──────────────────────────────────────────────────
+export const honeybeeTemplate: ProductionTemplate = {
+  id: 'honeybee-langstroth',
+  name: 'Honey Bee (Langstroth Hive)',
+  shortName: 'Honey Bee',
+  category: 'apiary',
+  species: 'Honey Bee',
+  purpose: 'Honey & Wax Production',
+  description: 'Commercial beekeeping with Langstroth hives. Annual cycle: build-up, honey flow, harvest, winter preparation.',
+  icon: '🍯',
+  color: '#f59e0b',
+  tags: ['beekeeping', 'honey', 'apiary', 'pollination', 'wax'],
+  materials: [
+    { id: 'nucleus-colony', name: 'Nucleus Colony / Package', unit: 'hive', category: 'input' },
+    { id: 'langstroth-hive', name: 'Langstroth Hive (box + frames)', unit: 'count', category: 'input' },
+    { id: 'bee-feed', name: 'Sugar Syrup / Pollen Supplement', unit: 'kg', category: 'input' },
+    { id: 'honey', name: 'Honey', unit: 'kg', category: 'output' },
+    { id: 'beeswax', name: 'Beeswax', unit: 'kg', category: 'output' },
+    { id: 'propolis', name: 'Propolis', unit: 'g', category: 'output' },
+    { id: 'queens', name: 'Queen Bees (for sale)', unit: 'count', category: 'output' },
+    { id: 'nucleus-out', name: 'Nucleus Colonies (for sale)', unit: 'count', category: 'output' },
+  ],
+  kpis: [
+    { id: 'honey-hive', name: 'Honey / Hive / Year', unit: 'kg', benchmark: 25 },
+    { id: 'colony-strength', name: 'Peak Colony Strength', unit: 'ratio', benchmark: 12 },
+    { id: 'colony-loss', name: 'Annual Colony Loss %', unit: 'percent', benchmark: 15 },
+    { id: 'varroa', name: 'Varroa Infestation Rate', unit: 'percent', benchmark: 2 },
+  ],
+  stages: [
+    {
+      id: 'spring-build',
+      name: 'Spring Build-Up',
+      order: 1,
+      durationDays: 60,
+      color: '#fde68a',
+      inputs: [
+        { id: 'sugar-syrup', label: 'Sugar Syrup (1:1) for brood stimulation', unit: 'kg', required: false },
+        { id: 'pollen-sub', label: 'Pollen Supplement', unit: 'kg', required: false },
+      ],
+      activities: [
+        { id: 'first-inspection', name: 'First spring inspection (check queen, brood, food stores)', frequency: 'weekly' },
+        { id: 'treat-varroa', name: 'Varroa treatment (oxalic acid vapour in early spring)', frequency: 'once' },
+        { id: 'add-super', name: 'Add honey super when bees cover 6+ frames', frequency: 'once' },
+        { id: 'swarm-check', name: 'Inspect for swarm cells weekly', frequency: 'weekly' },
+        { id: 'feed', name: 'Feed sugar syrup to stimulate build-up', frequency: 'weekly' },
+      ],
+      measurements: [
+        { id: 'frames-bees', name: 'Frames Covered with Bees', unit: 'count', frequency: 'weekly', required: true, benchmark: 8 },
+        { id: 'brood-frames', name: 'Brood Frames', unit: 'count', frequency: 'weekly', required: true, benchmark: 5 },
+        { id: 'honey-stores', name: 'Honey Store Frames', unit: 'count', frequency: 'weekly', required: true, benchmark: 2 },
+        { id: 'varroa-rate', name: 'Varroa Infestation Rate', unit: 'percent', frequency: 'monthly', required: false, benchmark: 2 },
+      ],
+      outputs: [],
+      possibleNextStages: ['honey-flow'],
+      alerts: ['Feed if honey stores drop below 2 frames', 'Remove swarm cells or colony will swarm and weaken'],
+    },
+    {
+      id: 'honey-flow',
+      name: 'Honey Flow (Main Nectar Flow)',
+      order: 2,
+      durationDays: 90,
+      color: '#f59e0b',
+      inputs: [
+        { id: 'honey-supers', label: 'Honey Supers (additional boxes)', unit: 'count', required: false },
+      ],
+      activities: [
+        { id: 'add-supers', name: 'Add supers as bees fill them', frequency: 'weekly' },
+        { id: 'inspect', name: 'Weekly inspection (minimize disturbance during flow)', frequency: 'weekly' },
+        { id: 'queen-space', name: 'Ensure queen excluder in place', frequency: 'once' },
+        { id: 'robbing', name: 'Watch for robbing bees — close entrances at dusk', frequency: 'daily' },
+      ],
+      measurements: [
+        { id: 'supers-filled', name: 'Supers Added', unit: 'count', frequency: 'weekly', required: false, benchmark: null },
+        { id: 'colony-str', name: 'Colony Strength (frames bees)', unit: 'count', frequency: 'weekly', required: true, benchmark: 12 },
+        { id: 'capped-honey', name: 'Capped Honey Frames', unit: 'count', frequency: 'weekly', required: false, benchmark: 8 },
+      ],
+      outputs: [],
+      possibleNextStages: ['harvest'],
+      alerts: ['Do NOT harvest honey with moisture >20% — will ferment in storage', 'NEVER apply pesticides within 2 km during honey flow'],
+    },
+    {
+      id: 'harvest',
+      name: 'Honey Harvest',
+      order: 3,
+      durationDays: 14,
+      color: '#f59e0b',
+      inputs: [],
+      activities: [
+        { id: 'remove-supers', name: 'Remove honey supers when 80%+ capped', frequency: 'once' },
+        { id: 'uncap', name: 'Uncap frames with uncapping knife or fork', frequency: 'daily' },
+        { id: 'extract', name: 'Extract using radial or tangential extractor', frequency: 'daily' },
+        { id: 'filter', name: 'Filter through 600 micron strainer', frequency: 'daily' },
+        { id: 'settle', name: 'Allow honey to settle 24–48h before bottling', frequency: 'once' },
+        { id: 'moisture-check', name: 'Check moisture with refractometer (≤18.6%)', frequency: 'daily' },
+      ],
+      measurements: [
+        { id: 'honey-kg', name: 'Honey Extracted', unit: 'kg', frequency: 'daily', required: true, benchmark: null },
+        { id: 'moisture-pct', name: 'Moisture %', unit: 'percent', frequency: 'daily', required: true, benchmark: 17 },
+        { id: 'wax-kg', name: 'Wax Recovered', unit: 'kg', frequency: 'once', required: false, benchmark: null },
+        { id: 'colour-grade', name: 'Colour (Pfund scale)', unit: 'celsius', frequency: 'once', required: false, benchmark: null },
+      ],
+      outputs: [
+        { materialTypeId: 'honey', quantity: null, unit: 'kg', routing: 'inventory', qualityGrade: 'A' },
+        { materialTypeId: 'beeswax', quantity: null, unit: 'kg', routing: 'inventory', qualityGrade: 'A' },
+      ],
+      possibleNextStages: ['winter-prep'],
+      alerts: ['Harvest only fully capped frames — uncapped honey >20% moisture will ferment', 'Return wet supers to bees for clean-up before storing'],
+    },
+    {
+      id: 'winter-prep',
+      name: 'Post-Harvest / Winter Preparation',
+      order: 4,
+      durationDays: 60,
+      color: '#94a3b8',
+      inputs: [
+        { id: 'winter-syrup', label: '2:1 Sugar Syrup (stores for winter)', unit: 'kg', required: true },
+        { id: 'varroa-strip', label: 'Varroa Treatment Strips (Apistan / Apivar)', unit: 'count', required: true },
+      ],
+      activities: [
+        { id: 'feed-heavy', name: 'Feed heavy syrup to build winter stores', frequency: 'weekly' },
+        { id: 'varroa-treat', name: 'Varroa treatment (broodless period = best efficacy)', frequency: 'once' },
+        { id: 'reduce-entrance', name: 'Reduce hive entrance to prevent mice', frequency: 'once' },
+        { id: 'wrap', name: 'Insulate hive (cold climates) or provide ventilation (tropics)', frequency: 'once' },
+        { id: 'assess', name: 'Final colony assessment before winter', frequency: 'once' },
+      ],
+      measurements: [
+        { id: 'winter-stores', name: 'Winter Stores (kg honey equivalent)', unit: 'kg', frequency: 'once', required: true, benchmark: 20 },
+        { id: 'colony-size', name: 'Colony Size for Winter', unit: 'count', frequency: 'once', required: true, benchmark: 8 },
+        { id: 'varroa-post', name: 'Varroa Rate Post-treatment', unit: 'percent', frequency: 'once', required: false, benchmark: 1 },
+      ],
+      outputs: [],
+      possibleNextStages: ['spring-build'],
+      alerts: ['Minimum 20 kg stored honey (or equivalent syrup) to survive winter', 'Treat Varroa NOW — broodless window gives maximum efficacy'],
+    },
+  ],
+};
+
+// ─── TOP-BAR HIVE ────────────────────────────────────────────────────────────
+export const topBarHiveTemplate: ProductionTemplate = {
+  id: 'honeybee-topbar',
+  name: 'Honey Bee (Top-Bar / Kenya Hive)',
+  shortName: 'Top-Bar Bee',
+  category: 'apiary',
+  species: 'Honey Bee',
+  purpose: 'Honey & Wax Production',
+  description: 'Low-cost top-bar beekeeping for smallholder farmers. Ideal for African context.',
+  icon: '🐝',
+  color: '#d97706',
+  tags: ['beekeeping', 'top-bar', 'Kenya hive', 'KTBH', 'smallholder', 'honey'],
+  materials: [
+    { id: 'ktbh', name: 'Top-Bar Hive', unit: 'count', category: 'input' },
+    { id: 'swarm-lure', name: 'Lemongrass Oil Swarm Lure', unit: 'ml', category: 'input' },
+    { id: 'ktbh-honey', name: 'Honey', unit: 'kg', category: 'output' },
+    { id: 'ktbh-wax', name: 'Beeswax', unit: 'kg', category: 'output' },
+  ],
+  kpis: [
+    { id: 'honey-hive', name: 'Honey / Hive / Year', unit: 'kg', benchmark: 15 },
+    { id: 'colony-occup', name: 'Hive Occupancy Rate', unit: 'percent', benchmark: 80 },
+  ],
+  stages: [
+    {
+      id: 'colonisation',
+      name: 'Hive Set-Up & Colonisation',
+      order: 1,
+      durationDays: 90,
+      color: '#fde68a',
+      inputs: [
+        { id: 'hive', label: 'Top-Bar Hive (well-treated / not paint-smelling)', unit: 'count', required: true },
+        { id: 'lure', label: 'Lemongrass Swarm Lure', unit: 'ml', required: false },
+      ],
+      activities: [
+        { id: 'site', name: 'Position hive in dappled shade, entrance facing East', frequency: 'once' },
+        { id: 'bait', name: 'Apply lemongrass oil to attract swarm', frequency: 'weekly' },
+        { id: 'inspect', name: 'Inspect weekly for swarm take-up', frequency: 'weekly' },
+        { id: 'transfer', name: 'Or transfer nucleus onto bars from Langstroth', frequency: 'once' },
+      ],
+      measurements: [
+        { id: 'occupied', name: 'Hive Occupied?', unit: 'count', frequency: 'weekly', required: true, benchmark: 1 },
+        { id: 'bars-built', name: 'Combs Built', unit: 'count', frequency: 'weekly', required: false, benchmark: null },
+      ],
+      outputs: [],
+      possibleNextStages: ['production'],
+      alerts: ['Do not inspect for first 3 weeks after colonisation — bees build comb and settle', 'Open hive very gently — smoke from smoker (dry grass) for 2–3 puffs'],
+    },
+    {
+      id: 'production',
+      name: 'Production Cycle (Quarterly)',
+      order: 2,
+      durationDays: 90,
+      color: '#f59e0b',
+      inputs: [],
+      activities: [
+        { id: 'inspect-q', name: 'Inspect monthly — gently and quickly', frequency: 'monthly' },
+        { id: 'swarm-ctrl', name: 'Control swarming: split colony if >20 combs', frequency: 'once' },
+        { id: 'harvest-back', name: 'Harvest from back of hive — leave 10 combs for bees', frequency: 'monthly' },
+        { id: 'press', name: 'Press combs through straining cloth', frequency: 'monthly' },
+      ],
+      measurements: [
+        { id: 'combs-total', name: 'Total Combs in Hive', unit: 'count', frequency: 'monthly', required: true, benchmark: 20 },
+        { id: 'honey-combs', name: 'Honey Combs Available', unit: 'count', frequency: 'monthly', required: true, benchmark: 5 },
+        { id: 'honey-kg', name: 'Honey Harvested', unit: 'kg', frequency: 'monthly', required: true, benchmark: 5 },
+        { id: 'wax-kg', name: 'Wax Recovered', unit: 'kg', frequency: 'monthly', required: false, benchmark: 0.5 },
+      ],
+      outputs: [
+        { materialTypeId: 'ktbh-honey', quantity: null, unit: 'kg', routing: 'inventory', qualityGrade: 'A' },
+        { materialTypeId: 'ktbh-wax', quantity: null, unit: 'kg', routing: 'inventory', qualityGrade: 'A' },
+      ],
+      possibleNextStages: ['production'],
+      alerts: ['Always leave at least 10 combs for the colony — brood + food stores', 'Wax from top-bar hives is very clean — high value for cosmetics/candles'],
+    },
+  ],
+};

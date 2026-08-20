@@ -1,0 +1,492 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Additional Livestock Templates: Goat (Meat), Goat (Dairy), Sheep, Rabbit
+// ─────────────────────────────────────────────────────────────────────────────
+import type { ProductionTemplate } from '../types';
+
+// ─── GOAT — MEAT ─────────────────────────────────────────────────────────────
+export const meatGoatTemplate: ProductionTemplate = {
+  id: 'meat-goat',
+  name: 'Meat Goat (Boer / Kalahari Red)',
+  shortName: 'Meat Goat',
+  category: 'livestock',
+  species: 'Goat',
+  purpose: 'Meat',
+  description: 'Commercial meat goat production. Kids to market at 3–5 months (20–25 kg live weight).',
+  icon: '🐐',
+  color: '#92400e',
+  tags: ['goat', 'meat', 'chevon', 'livestock'],
+  materials: [
+    { id: 'meat-goat-doe', name: 'Breeding Does', unit: 'head', category: 'input' },
+    { id: 'meat-goat-buck', name: 'Buck', unit: 'head', category: 'input' },
+    { id: 'goat-feed', name: 'Goat Feed / Lick', unit: 'kg', category: 'input' },
+    { id: 'goat-roughage', name: 'Roughage (hay/browse)', unit: 'kg', category: 'input' },
+    { id: 'goat-kid-meat', name: 'Weaner / Slaughter Goat', unit: 'head', category: 'output' },
+  ],
+  kpis: [
+    { id: 'kids-doe-year', name: 'Kids / Doe / Year', unit: 'count', benchmark: 1.8 },
+    { id: 'weaning-weight', name: 'Weaning Weight', unit: 'kg', benchmark: 15 },
+    { id: 'mortality-pre-wean', name: 'Pre-weaning Mortality', unit: 'percent', benchmark: 8 },
+    { id: 'adg', name: 'ADG', unit: 'g/day', benchmark: 180 },
+  ],
+  stages: [
+    {
+      id: 'mating',
+      name: 'Mating',
+      order: 1,
+      durationDays: 21,
+      color: '#f59e0b',
+      inputs: [
+        { id: 'does', label: 'Breeding Does', unit: 'head', required: true },
+        { id: 'buck', label: 'Breeding Buck', unit: 'head', required: true },
+      ],
+      activities: [
+        { id: 'flush', name: 'Flush does (extra feed 2 weeks pre-mating)', frequency: 'daily' },
+        { id: 'introduce-buck', name: 'Introduce buck at 1:20 doe ratio', frequency: 'once' },
+        { id: 'heat-detect', name: 'Observe heat signs daily', frequency: 'daily' },
+      ],
+      measurements: [
+        { id: 'does-bred', name: 'Does Observed in Heat', unit: 'count', frequency: 'daily', required: true, benchmark: null },
+        { id: 'body-cond', name: 'Buck Body Condition Score', unit: 'ratio', frequency: 'once', required: false, benchmark: 3 },
+      ],
+      outputs: [],
+      possibleNextStages: ['gestation'],
+      alerts: ['Boer doe gestation = 150 days', 'Buck-to-doe ratio: 1:20 natural, 1:40 with AI'],
+    },
+    {
+      id: 'gestation',
+      name: 'Gestation (150 days)',
+      order: 2,
+      durationDays: 150,
+      color: '#10b981',
+      inputs: [
+        { id: 'preg-feed', label: 'Goat Lick / Supplement (increased last 6 weeks)', unit: 'kg', required: true },
+        { id: 'roughage', label: 'Good Quality Roughage', unit: 'kg', required: true },
+      ],
+      activities: [
+        { id: 'preg-scan', name: 'Pregnancy scan at 45 days (ultrasound)', frequency: 'once' },
+        { id: 'steaming-up', name: 'Increase feed 6 weeks before kidding ("steaming up")', frequency: 'daily' },
+        { id: 'clostridium', name: 'Clostridium vaccination 4 weeks before kidding', frequency: 'once' },
+        { id: 'body-cond', name: 'Monthly body condition scoring', frequency: 'monthly' },
+      ],
+      measurements: [
+        { id: 'pregnancy-rate', name: 'Pregnant Does (scan)', unit: 'percent', frequency: 'once', required: true, benchmark: 90 },
+        { id: 'bcs', name: 'Body Condition Score', unit: 'ratio', frequency: 'monthly', required: true, benchmark: 3 },
+        { id: 'feed-cons', name: 'Feed Consumed / Doe / Day', unit: 'kg', frequency: 'weekly', required: false, benchmark: 0.8 },
+      ],
+      outputs: [],
+      possibleNextStages: ['kidding'],
+      alerts: ['BCS should be 3–3.5 at kidding', 'Separate singles vs multiples 2 weeks before kidding'],
+    },
+    {
+      id: 'kidding',
+      name: 'Kidding',
+      order: 3,
+      durationDays: 21,
+      color: '#f43f5e',
+      inputs: [
+        { id: 'colostrum-suppl', label: 'Colostrum Supplement (for rejected kids)', unit: 'kg', required: false },
+      ],
+      activities: [
+        { id: 'attend', name: 'Monitor does 24h during peak kidding', frequency: 'daily' },
+        { id: 'colostrum', name: 'Ensure kids receive colostrum within 2 hours', frequency: 'daily' },
+        { id: 'ear-tag', name: 'Tag, weigh, and record kids at birth', frequency: 'daily' },
+        { id: 'navel-dip', name: 'Dip navels in iodine', frequency: 'daily' },
+      ],
+      measurements: [
+        { id: 'kids-born', name: 'Kids Born', unit: 'count', frequency: 'daily', required: true, benchmark: null },
+        { id: 'kids-alive', name: 'Kids Alive at 24h', unit: 'count', frequency: 'daily', required: true, benchmark: null },
+        { id: 'avg-birth-wt', name: 'Avg Birth Weight', unit: 'kg', frequency: 'once', required: true, benchmark: 3.5 },
+        { id: 'stillborn', name: 'Stillborn', unit: 'count', frequency: 'daily', required: true, benchmark: 0 },
+      ],
+      outputs: [],
+      possibleNextStages: ['growing'],
+      alerts: ['Rejected kids: graft onto does that lost kids', 'Twins/triplets may need creep feeding by day 3'],
+    },
+    {
+      id: 'growing',
+      name: 'Growing to Market',
+      order: 4,
+      durationDays: 90,
+      color: '#6366f1',
+      inputs: [
+        { id: 'creep-feed', label: 'Creep Feed / Grower Supplement', unit: 'kg', required: false },
+        { id: 'roughage-kids', label: 'Quality Roughage / Browse', unit: 'kg', required: true },
+      ],
+      activities: [
+        { id: 'weigh-monthly', name: 'Monthly weighing', frequency: 'monthly' },
+        { id: 'vaccinate-cdtv', name: 'CDTV booster vaccine at 4 weeks', frequency: 'once' },
+        { id: 'parasite', name: 'FAMACHA eye check / FECRT monthly', frequency: 'monthly' },
+        { id: 'wean', name: 'Wean kids at 90 days (±3 months)', frequency: 'once' },
+      ],
+      measurements: [
+        { id: 'avg-weight', name: 'Avg Live Weight', unit: 'kg', frequency: 'monthly', required: true, benchmark: 20 },
+        { id: 'adg', name: 'ADG', unit: 'g/day', frequency: 'monthly', required: false, benchmark: 180 },
+        { id: 'mortality', name: 'Kid Mortality', unit: 'count', frequency: 'monthly', required: true, benchmark: 0 },
+      ],
+      outputs: [
+        { materialTypeId: 'goat-kid-meat', quantity: null, unit: 'head', routing: 'sale', qualityGrade: 'A' },
+      ],
+      possibleNextStages: [],
+      alerts: ['Market at 20–25 kg live weight (3–5 months)', 'Retain best doelings as replacement breeding stock'],
+    },
+  ],
+};
+
+// ─── GOAT — DAIRY ─────────────────────────────────────────────────────────────
+export const dairyGoatTemplate: ProductionTemplate = {
+  id: 'dairy-goat',
+  name: 'Dairy Goat (Saanen / Toggenburg / Alpine)',
+  shortName: 'Dairy Goat',
+  category: 'livestock',
+  species: 'Goat',
+  purpose: 'Milk Production',
+  description: 'Dairy goat production for fresh milk, cheese, and yoghurt. 9–10 month lactation.',
+  icon: '🐐',
+  color: '#0ea5e9',
+  tags: ['dairy', 'goat', 'milk', 'cheese'],
+  materials: [
+    { id: 'dairy-doe', name: 'Dairy Does', unit: 'head', category: 'input' },
+    { id: 'goat-dairyfeed', name: 'Dairy Goat Concentrate', unit: 'kg', category: 'input' },
+    { id: 'goat-hay', name: 'Lucerne / Quality Hay', unit: 'kg', category: 'input' },
+    { id: 'goat-milk', name: 'Goat Milk', unit: 'litre', category: 'output' },
+    { id: 'goat-kid-dairy', name: 'Dairy Kids', unit: 'head', category: 'output' },
+  ],
+  kpis: [
+    { id: 'milk-per-doe', name: 'Milk / Doe / Lactation', unit: 'litre', benchmark: 600 },
+    { id: 'peak-yield', name: 'Peak Daily Yield / Doe', unit: 'litre', benchmark: 3 },
+    { id: 'somatic-cells', name: 'SCC', unit: 'count', benchmark: 500000 },
+  ],
+  stages: [
+    {
+      id: 'dry-period',
+      name: 'Dry Period (8 weeks)',
+      order: 1,
+      durationDays: 56,
+      color: '#94a3b8',
+      inputs: [
+        { id: 'dry-feed', label: 'Maintenance Feed / Hay', unit: 'kg', required: true },
+      ],
+      activities: [
+        { id: 'dry-off', name: 'Implement abrupt dry-off (skip milking)', frequency: 'once' },
+        { id: 'dct', name: 'Apply intramammary antibiotic (dry-cow therapy)', frequency: 'once' },
+        { id: 'flush-prep', name: 'Increase condition score pre-kidding', frequency: 'daily' },
+      ],
+      measurements: [
+        { id: 'bcs', name: 'Body Condition Score', unit: 'ratio', frequency: 'weekly', required: true, benchmark: 3 },
+        { id: 'weight', name: 'Body Weight', unit: 'kg', frequency: 'monthly', required: false, benchmark: 55 },
+      ],
+      outputs: [],
+      possibleNextStages: ['freshening'],
+      alerts: ['Do NOT let dry goats get fat — BCS 3 at kidding target', 'Clostridium booster 4 weeks pre-kidding'],
+    },
+    {
+      id: 'freshening',
+      name: 'Freshening / Kidding',
+      order: 2,
+      durationDays: 14,
+      color: '#f43f5e',
+      inputs: [
+        { id: 'colostrum', label: 'Colostrum (for kids)', unit: 'kg', required: false },
+      ],
+      activities: [
+        { id: 'kidding', name: 'Monitor kidding, assist if needed', frequency: 'daily' },
+        { id: 'first-milk', name: 'First milking 6h after birth (strip foremilk)', frequency: 'once' },
+        { id: 'tag-kids', name: 'Tag and weigh kids', frequency: 'once' },
+      ],
+      measurements: [
+        { id: 'kids-born', name: 'Kids Born', unit: 'count', frequency: 'daily', required: true, benchmark: null },
+        { id: 'first-milk', name: 'First Milking Volume', unit: 'litre', frequency: 'once', required: true, benchmark: 1 },
+        { id: 'birth-weight', name: 'Kid Birth Weight', unit: 'kg', frequency: 'once', required: true, benchmark: 3 },
+      ],
+      outputs: [],
+      possibleNextStages: ['peak-lactation'],
+      alerts: ['Let kids suckle colostrum for first 3–5 days', 'Begin machine/hand milking from day 5–7 if selling milk'],
+    },
+    {
+      id: 'peak-lactation',
+      name: 'Peak Lactation (weeks 4–12)',
+      order: 3,
+      durationDays: 56,
+      color: '#10b981',
+      inputs: [
+        { id: 'lac-conc', label: 'Lactation Concentrate (500g per litre above 2L)', unit: 'kg', required: true },
+        { id: 'lucerne', label: 'Lucerne / High-protein hay', unit: 'kg', required: true },
+      ],
+      activities: [
+        { id: 'milk-2x', name: 'Milk twice daily (06:00 and 18:00)', frequency: 'twice_daily' },
+        { id: 'mastitis-check', name: 'CMT / California Mastitis Test weekly', frequency: 'weekly' },
+        { id: 'feed-adj', name: 'Adjust concentrate to match yield', frequency: 'weekly' },
+      ],
+      measurements: [
+        { id: 'daily-yield', name: 'Total Daily Yield / Herd', unit: 'litre', frequency: 'daily', required: true, benchmark: null },
+        { id: 'avg-yield-doe', name: 'Avg Yield / Doe', unit: 'litre', frequency: 'daily', required: false, benchmark: 3 },
+        { id: 'scc', name: 'SCC (monthly bulk)', unit: 'count', frequency: 'monthly', required: false, benchmark: 500000 },
+        { id: 'fat-pct', name: 'Milk Fat %', unit: 'percent', frequency: 'monthly', required: false, benchmark: 3.5 },
+      ],
+      outputs: [
+        { materialTypeId: 'goat-milk', quantity: null, unit: 'litre', routing: 'sale', qualityGrade: 'A' },
+      ],
+      possibleNextStages: ['mid-lactation'],
+      alerts: ['Peak yield in dairy goats occurs weeks 4–8 post-freshening', 'Energy deficit at peak — monitor body condition carefully'],
+    },
+    {
+      id: 'mid-lactation',
+      name: 'Mid & Late Lactation (weeks 12–40)',
+      order: 4,
+      durationDays: 196,
+      color: '#6366f1',
+      inputs: [
+        { id: 'lac-feed', label: 'Lactation Concentrate', unit: 'kg', required: true },
+        { id: 'roughage', label: 'Roughage / Browse', unit: 'kg', required: true },
+      ],
+      activities: [
+        { id: 'milk-2x', name: 'Twice-daily milking', frequency: 'twice_daily' },
+        { id: 're-breed', name: 'Re-breed does at 90 days after freshening', frequency: 'once' },
+        { id: 'dry-off-plan', name: 'Begin dry-off planning at month 9', frequency: 'once' },
+      ],
+      measurements: [
+        { id: 'daily-yield', name: 'Total Daily Yield', unit: 'litre', frequency: 'daily', required: true, benchmark: null },
+        { id: 'pregnancy', name: 'Confirmed Pregnant', unit: 'count', frequency: 'once', required: true, benchmark: null },
+      ],
+      outputs: [
+        { materialTypeId: 'goat-milk', quantity: null, unit: 'litre', routing: 'sale', qualityGrade: 'A' },
+      ],
+      possibleNextStages: ['dry-period'],
+      alerts: ['Dry off at 8 months lactation — allow 8-week dry period'],
+    },
+  ],
+};
+
+// ─── SHEEP — MEAT ─────────────────────────────────────────────────────────────
+export const meatSheepTemplate: ProductionTemplate = {
+  id: 'meat-sheep',
+  name: 'Meat Sheep (Dorper / Damara / Merino x)',
+  shortName: 'Meat Sheep',
+  category: 'livestock',
+  species: 'Sheep',
+  purpose: 'Meat',
+  description: 'Commercial mutton/lamb production. Lambs to market at 4–6 months (30–40 kg).',
+  icon: '🐑',
+  color: '#e2e8f0',
+  tags: ['sheep', 'lamb', 'mutton', 'dorper', 'livestock'],
+  materials: [
+    { id: 'ewe', name: 'Breeding Ewes', unit: 'head', category: 'input' },
+    { id: 'ram', name: 'Ram', unit: 'head', category: 'input' },
+    { id: 'sheep-feed', name: 'Sheep Feed / Supplement', unit: 'kg', category: 'input' },
+    { id: 'sheep-roughage', name: 'Roughage / Pasture', unit: 'kg', category: 'input' },
+    { id: 'lamb-market', name: 'Slaughter Lamb / Mutton', unit: 'head', category: 'output' },
+    { id: 'wool', name: 'Wool', unit: 'kg', category: 'output' },
+  ],
+  kpis: [
+    { id: 'lambing-rate', name: 'Lambing Rate', unit: 'percent', benchmark: 120 },
+    { id: 'weaning-weight', name: 'Weaning Weight', unit: 'kg', benchmark: 20 },
+    { id: 'adg', name: 'ADG (post-weaning)', unit: 'g/day', benchmark: 200 },
+    { id: 'mortality-pre', name: 'Lamb Mortality (pre-weaning)', unit: 'percent', benchmark: 10 },
+  ],
+  stages: [
+    {
+      id: 'joining',
+      name: 'Joining / Mating',
+      order: 1,
+      durationDays: 42,
+      color: '#f59e0b',
+      inputs: [
+        { id: 'ewes', label: 'Ewes', unit: 'head', required: true },
+        { id: 'rams', label: 'Rams (1:40 ratio)', unit: 'head', required: true },
+        { id: 'flushing-feed', label: 'Flushing Supplement', unit: 'kg', required: false },
+      ],
+      activities: [
+        { id: 'flush', name: 'Flush ewes (extra feed 3 weeks before joining)', frequency: 'daily' },
+        { id: 'ram-check', name: 'Ram soundness examination pre-joining', frequency: 'once' },
+        { id: 'harness', name: 'Ram harness / crayons to detect mating', frequency: 'daily' },
+        { id: 'bcs', name: 'Ewe BCS scoring at joining', frequency: 'once' },
+      ],
+      measurements: [
+        { id: 'ewes-joined', name: 'Ewes Joined', unit: 'count', frequency: 'once', required: true, benchmark: null },
+        { id: 'bcs-joining', name: 'Avg BCS at Joining', unit: 'ratio', frequency: 'once', required: true, benchmark: 3 },
+      ],
+      outputs: [],
+      possibleNextStages: ['gestation'],
+      alerts: ['Dorper ewes are non-seasonal; can lamb 3 times in 2 years', 'Merino ewes seasonal — autumn joining for spring lambing'],
+    },
+    {
+      id: 'gestation',
+      name: 'Gestation (147 days)',
+      order: 2,
+      durationDays: 147,
+      color: '#10b981',
+      inputs: [
+        { id: 'ewe-feed', label: 'Ewe Supplement (increased last 6 weeks)', unit: 'kg', required: true },
+      ],
+      activities: [
+        { id: 'preg-scan', name: 'Pregnancy scanning at 60 days', frequency: 'once' },
+        { id: 'drenching', name: 'Anthelmintic drench at weaning/joining', frequency: 'once' },
+        { id: 'vit-e', name: 'Vitamin E/Se injection 4 weeks pre-lambing', frequency: 'once' },
+      ],
+      measurements: [
+        { id: 'pregnant-pct', name: 'Pregnancy Rate (%)', unit: 'percent', frequency: 'once', required: true, benchmark: 90 },
+        { id: 'bcs', name: 'Ewe BCS', unit: 'ratio', frequency: 'monthly', required: true, benchmark: 3 },
+      ],
+      outputs: [],
+      possibleNextStages: ['lambing'],
+      alerts: ['Pregnancy toxaemia risk in multiple-bearing ewes — energy supplement vital last 6 weeks'],
+    },
+    {
+      id: 'lambing',
+      name: 'Lambing',
+      order: 3,
+      durationDays: 21,
+      color: '#f43f5e',
+      inputs: [
+        { id: 'col-suppl', label: 'Colostrum Supplement', unit: 'kg', required: false },
+      ],
+      activities: [
+        { id: 'attend', name: 'Attend lambing daily (2h intervals at peak)', frequency: 'daily' },
+        { id: 'navel', name: 'Iodine navel dip all lambs', frequency: 'daily' },
+        { id: 'grafting', name: 'Graft orphan lambs onto ewes that lost lambs', frequency: 'daily' },
+      ],
+      measurements: [
+        { id: 'lambs-born', name: 'Lambs Born', unit: 'count', frequency: 'daily', required: true, benchmark: null },
+        { id: 'lambs-alive', name: 'Lambs Alive 48h', unit: 'count', frequency: 'daily', required: true, benchmark: null },
+        { id: 'birth-weight', name: 'Avg Birth Weight', unit: 'kg', frequency: 'once', required: false, benchmark: 4 },
+      ],
+      outputs: [],
+      possibleNextStages: ['growing'],
+      alerts: ['Hypothermia is #1 killer in cold climates — lambing shelters critical', 'Mismothering: keep ewes in lambing pens 48h'],
+    },
+    {
+      id: 'growing',
+      name: 'Growing to Market',
+      order: 4,
+      durationDays: 120,
+      color: '#6366f1',
+      inputs: [
+        { id: 'creep', label: 'Creep Feed', unit: 'kg', required: false },
+        { id: 'pasture', label: 'Pasture / Grazing', unit: 'ha', required: true },
+      ],
+      activities: [
+        { id: 'weigh-monthly', name: 'Monthly weighing', frequency: 'monthly' },
+        { id: 'wean', name: 'Wean at 90 days (10–12 weeks)', frequency: 'once' },
+        { id: 'parasite', name: 'Faecal worm counts monthly', frequency: 'monthly' },
+        { id: 'wool-shear', name: 'Shearing (Merino types — once/year)', frequency: 'once' },
+      ],
+      measurements: [
+        { id: 'avg-weight', name: 'Avg Live Weight', unit: 'kg', frequency: 'monthly', required: true, benchmark: 30 },
+        { id: 'adg', name: 'ADG', unit: 'g/day', frequency: 'monthly', required: false, benchmark: 200 },
+        { id: 'mortality', name: 'Lamb Mortality', unit: 'count', frequency: 'monthly', required: true, benchmark: 0 },
+      ],
+      outputs: [
+        { materialTypeId: 'lamb-market', quantity: null, unit: 'head', routing: 'sale', qualityGrade: 'A' },
+        { materialTypeId: 'wool', quantity: null, unit: 'kg', routing: 'inventory', qualityGrade: 'A' },
+      ],
+      possibleNextStages: [],
+      alerts: ['Market Dorper lambs at 30–40 kg live weight', 'Cull ewes with poor mothering history'],
+    },
+  ],
+};
+
+// ─── RABBIT ───────────────────────────────────────────────────────────────────
+export const rabbitTemplate: ProductionTemplate = {
+  id: 'rabbit',
+  name: 'Rabbit (New Zealand White / Californian)',
+  shortName: 'Rabbit',
+  category: 'livestock',
+  species: 'Rabbit',
+  purpose: 'Meat Production',
+  description: 'Intensive rabbit meat production. Does produce 6–7 litters/year. Kits ready at 8 weeks.',
+  icon: '🐇',
+  color: '#f9a8d4',
+  tags: ['rabbit', 'meat', 'cuniculture', 'small-livestock'],
+  materials: [
+    { id: 'doe', name: 'Breeding Does', unit: 'head', category: 'input' },
+    { id: 'buck', name: 'Buck', unit: 'head', category: 'input' },
+    { id: 'rabbit-feed', name: 'Rabbit Pellets', unit: 'kg', category: 'input' },
+    { id: 'rabbit-hay', name: 'Timothy / Grass Hay', unit: 'kg', category: 'input' },
+    { id: 'rabbit-meat', name: 'Rabbit (live / processed)', unit: 'head', category: 'output' },
+    { id: 'rabbit-manure', name: 'Rabbit Manure (fertiliser)', unit: 'kg', category: 'byproduct' },
+  ],
+  kpis: [
+    { id: 'litters-per-year', name: 'Litters / Doe / Year', unit: 'count', benchmark: 6.5 },
+    { id: 'kits-per-litter', name: 'Kits Weaned / Litter', unit: 'count', benchmark: 7 },
+    { id: 'fcr', name: 'FCR', unit: 'ratio', benchmark: 3.5 },
+    { id: 'days-to-market', name: 'Days to Market Weight', unit: 'day', benchmark: 56 },
+  ],
+  stages: [
+    {
+      id: 'mating',
+      name: 'Mating / Kindling',
+      order: 1,
+      durationDays: 31,
+      color: '#f59e0b',
+      inputs: [
+        { id: 'does', label: 'Breeding Does', unit: 'head', required: true },
+        { id: 'buck', label: 'Buck', unit: 'head', required: true },
+      ],
+      activities: [
+        { id: 'breed', name: 'Take doe to buck (never buck to doe)', frequency: 'daily' },
+        { id: 'confirm', name: 'Palpate doe at 10–14 days to confirm pregnancy', frequency: 'once' },
+        { id: 'nest-box', name: 'Place nest box in cage 28 days after mating', frequency: 'once' },
+        { id: 'pull-fur', name: 'Doe will pull fur — normal sign of imminent kindle', frequency: 'daily' },
+      ],
+      measurements: [
+        { id: 'does-mated', name: 'Does Mated', unit: 'count', frequency: 'daily', required: true, benchmark: null },
+        { id: 'confirmed-pregnant', name: 'Does Confirmed Pregnant', unit: 'count', frequency: 'once', required: true, benchmark: null },
+      ],
+      outputs: [],
+      possibleNextStages: ['nursing'],
+      alerts: ['Rabbit gestation = 31 days', 'Re-breed doe 24–48h after kindling for maximum production', 'Never disturb nest box in first 7 days'],
+    },
+    {
+      id: 'nursing',
+      name: 'Nursing / Litter Rearing',
+      order: 2,
+      durationDays: 35,
+      color: '#10b981',
+      inputs: [
+        { id: 'feed-doe', label: 'Rabbit Pellets (ad-lib for nursing doe)', unit: 'kg', required: true },
+        { id: 'hay', label: 'Hay (always available)', unit: 'kg', required: true },
+      ],
+      activities: [
+        { id: 'check-kits', name: 'Check kits daily (count, feel for warmth)', frequency: 'daily' },
+        { id: 'eyes-open', name: 'Kits open eyes at 10 days — normal', frequency: 'once' },
+        { id: 'solid-feed', name: 'Kits start eating solid food at 18–21 days', frequency: 'once' },
+        { id: 'weigh-litter', name: 'Weigh entire litter weekly', frequency: 'weekly' },
+      ],
+      measurements: [
+        { id: 'kits-alive', name: 'Kits Alive', unit: 'count', frequency: 'daily', required: true, benchmark: null },
+        { id: 'litter-weight', name: 'Litter Total Weight', unit: 'kg', frequency: 'weekly', required: false, benchmark: null },
+        { id: 'doe-feed', name: 'Doe Feed Consumed', unit: 'kg', frequency: 'daily', required: false, benchmark: 0.3 },
+      ],
+      outputs: [],
+      possibleNextStages: ['growing'],
+      alerts: ['Kits should be warm and full bellies at all times', 'Doe produces milk ONCE per day — kits feed for <5 minutes'],
+    },
+    {
+      id: 'growing',
+      name: 'Growing to Slaughter (5–8 weeks)',
+      order: 3,
+      durationDays: 21,
+      color: '#6366f1',
+      inputs: [
+        { id: 'grower-feed', label: 'Grower Pellets (ad-lib)', unit: 'kg', required: true },
+      ],
+      activities: [
+        { id: 'wean', name: 'Wean kits at 5 weeks (35 days)', frequency: 'once' },
+        { id: 'separate', name: 'Sex-separate at 8 weeks to prevent pregnancy', frequency: 'once' },
+        { id: 'weigh', name: 'Weekly weighing', frequency: 'weekly' },
+        { id: 'coccidiosis', name: 'Add Amprolium to water if coccidiosis risk', frequency: 'weekly' },
+      ],
+      measurements: [
+        { id: 'avg-weight', name: 'Avg Live Weight', unit: 'kg', frequency: 'weekly', required: true, benchmark: 2.2 },
+        { id: 'fcr', name: 'Running FCR', unit: 'ratio', frequency: 'weekly', required: false, benchmark: 3.5 },
+        { id: 'mortality', name: 'Mortality', unit: 'count', frequency: 'weekly', required: true, benchmark: 0 },
+      ],
+      outputs: [
+        { materialTypeId: 'rabbit-meat', quantity: null, unit: 'head', routing: 'sale', qualityGrade: 'A' },
+        { materialTypeId: 'rabbit-manure', quantity: null, unit: 'kg', routing: 'inventory', qualityGrade: 'A' },
+      ],
+      possibleNextStages: [],
+      alerts: ['Market at 2.0–2.5 kg live weight (8–10 weeks)', 'Rabbit manure: cold fertiliser, can be applied directly to garden', 'Coccidiosis kills fast — prevention critical post-weaning'],
+    },
+  ],
+};

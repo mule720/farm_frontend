@@ -15,8 +15,28 @@ export type ProductionCategory =
   | 'orchard'
   | 'apiary'
   | 'mushroom'
+  | 'insects'          // BSF, crickets, mealworms, silkworms, earthworms, snails
+  | 'aquatic_plants'   // Seaweed, spirulina/microalgae
+  | 'forestry'         // Timber forestry, agroforestry/silvopastoral
   | 'processing'
   | 'services';
+
+/**
+ * Maps to the 11-template universal architecture recommended by the system design.
+ * Adding a new species/crop/niche should be configuration, not a new template.
+ *   T1  Annual/Seasonal Crop
+ *   T2  Horticultural Plant (vegetables, herbs, flowers)
+ *   T3  Perennial/Orchard Plant (fruit trees, vines, coffee)
+ *   T4  Tree/Forest Production
+ *   T5  Agroforestry / Mixed Production
+ *   T6  Terrestrial Animal (cattle, goats, sheep, pigs, rabbits, deer, camelids)
+ *   T7  Avian / Flock (all poultry & birds)
+ *   T8  Aquatic Animal Production (fish, shellfish, shrimp)
+ *   T9  Aquatic Plant / Algae (seaweed, spirulina)
+ *  T10  Colony / Small Organism (bees, insects, worms, snails)
+ *  T11  Fungi / Controlled Biomass (mushrooms)
+ */
+export type UniversalTemplate = 'T1' | 'T2' | 'T3' | 'T4' | 'T5' | 'T6' | 'T7' | 'T8' | 'T9' | 'T10' | 'T11';
 
 export type ProductionEnvironment =
   | 'open_field' | 'greenhouse' | 'shade_house' | 'hydroponics' | 'indoor'
@@ -116,6 +136,8 @@ export interface ProductionTemplate {
   name: string;
   shortName: string;
   category: ProductionCategory;
+  /** Which of the 11 universal template archetypes this maps to (T1–T11) */
+  universalTemplate?: UniversalTemplate;
   species?: string;
   breed?: string;
   purpose?: string;
@@ -129,6 +151,54 @@ export interface ProductionTemplate {
   tags: string[];
 }
 
+// ─── Edit Approval System ─────────────────────────────────────────────────────
+
+/**
+ * Org-level configuration for the edit approval workflow.
+ * When enabled, any edit or delete creates a pending EditRequest
+ * that must be approved before the change is applied.
+ */
+export interface EditApprovalConfig {
+  enabled: boolean;          // false = open editing; true = require approval
+  approverName: string;      // display name of the designated approver
+  currentUserName: string;   // display name of the current staff member
+  requireReason: boolean;    // require a reason field on every edit/delete
+}
+
+/**
+ * A single pending (or resolved) edit request.
+ * Stores enough information to show, apply, or reject the change.
+ */
+export interface EditRequest {
+  id: string;
+  status: 'pending' | 'approved' | 'rejected';
+
+  // What entity is being changed
+  entityType: 'cycle' | 'daily_record' | 'event';
+  entityId: string;                 // id of the record/event/cycle being edited
+  cycleId: string;                  // always set — which cycle owns this record
+  stageId?: string;                 // for records and events
+
+  // Human-readable description of the change
+  entityLabel: string;              // e.g. "Daily Record — 2024-03-10"
+  fieldLabel: string;               // e.g. "notes" or "Feed Consumed" or "DELETE"
+  oldValueDisplay: string;          // stringified previous value
+  newValueDisplay: string;          // stringified new value
+
+  // The actual patch to apply when approved
+  // Serialised as JSON string to keep the interface simple
+  applyPayload: string;
+
+  reason?: string;                  // optional reason provided by submitter
+
+  // Audit trail
+  requestedBy: string;
+  requestedAt: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  rejectionNote?: string;
+}
+
 // ─── Organisation Config ──────────────────────────────────────────────────────
 
 export interface OrgProfile {
@@ -139,6 +209,7 @@ export interface OrgProfile {
   timezone: string;
   onboardingComplete: boolean;
   enterprises: EnterpriseConfig[];
+  editApproval?: EditApprovalConfig; // edit workflow configuration
   createdAt: string;
 }
 
@@ -173,6 +244,16 @@ export interface ProductionCycle {
   enterpriseId: string;
   cycleNumber: number;
   name: string;
+  variantId?: string;          // e.g. 'layer_from_pol', 'broiler_grow_out', 'incubation'
+  setupValues?: Record<string, string>; // raw wizard answers for reference
+  // Production Program grouping
+  programId?: string;          // shared ID across all phases of one program
+  programName?: string;        // e.g. "Guinea Fowl Breeding Program"
+  programPhase?: number;       // 1, 2, 3 … (display order within the program)
+  programPhaseLabel?: string;  // e.g. "Phase 1: Keet Grow-Out"
+  // Lineage tracking
+  sourceRef?: string;          // ID of the cycle that produced the starting stock for this one
+  transferHistory?: TransferRecord[]; // log of outputs transferred out of this cycle
   startDate: string;
   expectedEndDate?: string;
   endDate?: string;
@@ -182,6 +263,22 @@ export interface ProductionCycle {
   productionUnits: ProductionUnit[];
   notes?: string;
   createdAt: string;
+}
+
+export interface TransferRecord {
+  id: string;
+  date: string;
+  outputType: string;        // 'birds' | 'eggs' | 'keets' | 'chicks' | custom label
+  totalQuantity: number;
+  unit: string;
+  soldQuantity: number;
+  soldPricePerUnit?: number;
+  soldRevenue?: number;
+  transferredQuantity: number;
+  destinationCycleId?: string;   // existing cycle that received the transfer
+  destinationCycleName?: string;
+  newCycleCreated?: boolean;
+  notes?: string;
 }
 
 export interface CycleStage {
@@ -198,7 +295,8 @@ export interface CycleStage {
 export interface DailyRecord {
   id: string;
   date: string;
-  measurements: Record<string, number>;   // measurementConfigId → value
+  measurements: Record<string, number>;   // numeric fields: measurementConfigId → value
+  data?: Record<string, string>;          // text/select fields: fieldId → string value
   notes?: string;
   recordedBy: string;
 }
@@ -208,7 +306,9 @@ export interface ProductionEvent {
   type: string;
   date: string;
   description?: string;
-  measurements: Record<string, number>;
+  /** Universal field values from the dynamic event form — keyed by EventField.id */
+  data?: Record<string, string | number | boolean>;
+  measurements?: Record<string, number>;
   outputs?: MaterialOutput[];
   cost?: number;
   notes?: string;

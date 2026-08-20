@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { ProcessingBatch, ProcessingRecipe, OutputRouting } from '@/lib/types';
 import { v4 as uuidv4 } from 'uuid';
+import { emit, type StockInPayload, type StockOutPayload } from '@/lib/bus';
 
 // ─── Built-in recipe templates ────────────────────────────────────────────────
 const DEFAULT_RECIPES: ProcessingRecipe[] = [
@@ -138,7 +139,49 @@ function useBatches() {
     return b;
   }
   function updateBatch(id: string, patch: Partial<ProcessingBatch>) {
-    setBatches(prev => prev.map(b => b.id === id ? { ...b, ...patch } : b));
+    setBatches(prev => {
+      const old = prev.find(b => b.id === id);
+      const updated = prev.map(b => b.id === id ? { ...b, ...patch } : b);
+      const next = updated.find(b => b.id === id);
+      if (!old || !next) return updated;
+
+      const today = new Date().toISOString().slice(0, 10);
+
+      // ── Batch started: emit stock_out for each input consumed ──────────────
+      if (old.status !== 'in_progress' && next.status === 'in_progress') {
+        (next.actualInputs ?? []).forEach(inp => {
+          emit<StockOutPayload>('inventory:stock_out', {
+            materialTypeId: inp.materialTypeId,
+            materialName: inp.materialName,
+            quantity: inp.actualQty ?? inp.quantityPer100kg ?? 0,
+            unit: inp.unit,
+            date: next.startDate ?? today,
+            destination: 'processing',
+            cycleRef: id,
+            reason: `Processing batch: ${next.recipeId}`,
+          }, 'processing');
+        });
+      }
+
+      // ── Batch completed: emit stock_in for each output produced ─────────────
+      if (old.status !== 'completed' && next.status === 'completed') {
+        (next.actualOutputs ?? []).forEach(out => {
+          if (!out.actualQty || out.actualQty <= 0) return;
+          emit<StockInPayload>('inventory:stock_in', {
+            materialTypeId: out.materialTypeId,
+            materialName: out.materialName,
+            quantity: out.actualQty,
+            unit: out.unit,
+            date: next.endDate ?? today,
+            cycleRef: id,
+            eventRef: `batch:${id}`,
+            qualityStatus: next.qualityStatus ?? 'pending',
+          }, 'processing');
+        });
+      }
+
+      return updated;
+    });
   }
   function addRecipe(recipe: Omit<ProcessingRecipe, 'id'>) {
     const r = { ...recipe, id: uuidv4() };

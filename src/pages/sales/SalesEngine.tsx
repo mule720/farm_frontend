@@ -8,6 +8,7 @@ import {
   Clock, AlertCircle, Search, ChevronRight, DollarSign,
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+import { emit, type StockOutPayload, type IncomePayload } from '@/lib/bus';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type OrderStatus    = 'draft' | 'confirmed' | 'fulfilled' | 'cancelled';
@@ -85,7 +86,39 @@ function useSales() {
     return order;
   }
   function updateOrder(id: string, patch: Partial<SaleOrder>) {
-    setOrders(prev => prev.map(o => o.id === id ? { ...o, ...patch } : o));
+    setOrders(prev => {
+      const old = prev.find(o => o.id === id);
+      const updated = prev.map(o => o.id === id ? { ...o, ...patch } : o);
+      const next = updated.find(o => o.id === id);
+      if (!old || !next) return updated;
+
+      const today = new Date().toISOString().slice(0, 10);
+
+      // ── Order confirmed → reserve/stock_out inventory per line ─────────────
+      if (old.status !== 'fulfilled' && next.status === 'fulfilled') {
+        next.lines.forEach(line => {
+          emit<StockOutPayload>('inventory:stock_out', {
+            materialName: line.description,
+            quantity: line.qty,
+            unit: line.unit,
+            reason: `Sale order ${next.orderNumber} to ${next.customerName}`,
+            reference: next.orderNumber,
+            destination: next.customerName,
+            date: today,
+          }, 'sales');
+        });
+
+        // Also record income on the bus so FinanceEngine auto-captures it
+        emit<IncomePayload>('finance:income', {
+          description: `Sales order ${next.orderNumber} — ${next.customerName}`,
+          amount: next.total,
+          date: today,
+          reference: next.orderNumber,
+        }, 'sales');
+      }
+
+      return updated;
+    });
   }
   function recordPayment(orderId: string, amount: number) {
     setOrders(prev => prev.map(o => {

@@ -2,12 +2,13 @@
 // AgroNexus v2 — Inventory Engine
 // Universal materials management: stock levels, movements, locations, batches
 // ─────────────────────────────────────────────────────────────────────────────
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Plus, X, Package, ArrowDown, ArrowUp, ArrowLeftRight,
   Search, ChevronRight, BarChart3, MapPin, Filter,
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+import { consume, type StockInPayload, type StockOutPayload } from '@/lib/bus';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type MaterialCategory = 'feed' | 'medicine' | 'seed' | 'fertiliser' | 'chemical' | 'equipment' | 'packaging' | 'produce' | 'processed' | 'other';
@@ -83,7 +84,138 @@ function useInventory() {
     return movements.filter(m => m.itemId === itemId).sort((a, b) => b.date.localeCompare(a.date));
   }
 
+  // ─── Consume bus events ──────────────────────────────────────────────────────
+  // Runs on mount and every 10 s to drain pending stock_in events from Production Engine
+  useEffect(() => {
+    function drainBus() {
+      // ── Stock In ────────────────────────────────────────────────────────────
+      const ins = consume<StockInPayload>('inventory:stock_in');
+      if (ins.length > 0) {
+        setItems(prevItems => {
+          let updatedItems = [...prevItems];
+          const newMovements: StockMovement[] = [];
+
+          ins.forEach(payload => {
+            const slug = payload.materialName.toLowerCase().replace(/\s+/g, '-');
+            // Try to find an existing item by slug-matching the name
+            const existing = updatedItems.find(
+              i => i.name.toLowerCase().replace(/\s+/g, '-') === slug ||
+                   i.sku === slug
+            );
+
+            if (existing) {
+              // Update qty on existing item
+              const delta = payload.quantity;
+              updatedItems = updatedItems.map(i =>
+                i.id === existing.id ? { ...i, currentQty: i.currentQty + delta } : i
+              );
+              newMovements.push({
+                id: uuidv4(),
+                itemId: existing.id,
+                type: 'in',
+                qty: payload.quantity,
+                date: payload.date,
+                reference: payload.cycleRef ?? payload.eventRef,
+                unitCost: payload.costPerUnit,
+                notes: `Auto: from production bus (${payload.cycleRef ?? ''})`,
+                createdAt: new Date().toISOString(),
+              });
+            } else {
+              // Auto-create new inventory item
+              const newId = uuidv4();
+              const inferred = inferCategory(payload.materialName);
+              updatedItems.push({
+                id: newId,
+                name: payload.materialName,
+                sku: slug,
+                category: inferred,
+                unit: payload.unit,
+                currentQty: payload.quantity,
+                minStockLevel: 0,
+                costPerUnit: payload.costPerUnit,
+                location: undefined,
+                notes: `Auto-created from production event. Cycle: ${payload.cycleRef ?? 'unknown'}`,
+                createdAt: new Date().toISOString(),
+              });
+              newMovements.push({
+                id: uuidv4(),
+                itemId: newId,
+                type: 'in',
+                qty: payload.quantity,
+                date: payload.date,
+                reference: payload.cycleRef ?? payload.eventRef,
+                unitCost: payload.costPerUnit,
+                notes: 'Initial stock from production engine',
+                createdAt: new Date().toISOString(),
+              });
+            }
+          });
+
+          if (newMovements.length > 0) {
+            setMovements(prev => [...prev, ...newMovements]);
+          }
+          return updatedItems;
+        });
+      }
+
+      // ── Stock Out ───────────────────────────────────────────────────────────
+      const outs = consume<StockOutPayload>('inventory:stock_out');
+      if (outs.length > 0) {
+        setItems(prevItems => {
+          let updatedItems = [...prevItems];
+          const newMovements: StockMovement[] = [];
+
+          outs.forEach(payload => {
+            const existing = updatedItems.find(i =>
+              i.name.toLowerCase().replace(/\s+/g, '-') === payload.materialTypeId.toLowerCase()
+            );
+            if (!existing) return;
+
+            updatedItems = updatedItems.map(i =>
+              i.id === existing.id ? { ...i, currentQty: Math.max(0, i.currentQty - payload.quantity) } : i
+            );
+            newMovements.push({
+              id: uuidv4(),
+              itemId: existing.id,
+              type: 'out',
+              qty: payload.quantity,
+              date: payload.date,
+              reference: payload.cycleRef,
+              notes: `Auto: ${payload.reason ?? 'production out'} (${payload.destination ?? ''})`,
+              createdAt: new Date().toISOString(),
+            });
+          });
+
+          if (newMovements.length > 0) {
+            setMovements(prev => [...prev, ...newMovements]);
+          }
+          return updatedItems;
+        });
+      }
+    }
+
+    drainBus();
+    const interval = setInterval(drainBus, 10_000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return { items, movements, addItem, updateItem, deleteItem, recordMovement, getItemMovements };
+}
+
+// Infer category from material name for auto-created items
+function inferCategory(name: string): MaterialCategory {
+  const n = name.toLowerCase();
+  if (/feed|bran|meal|hay|silage|fodder/.test(n))    return 'feed';
+  if (/seed|grain|maize|wheat|soy|rice/.test(n))     return 'seed';
+  if (/vaccine|antibiotic|drug|medicine|deworm/.test(n)) return 'medicine';
+  if (/fertiliser|fertilizer|urea|npk|dap/.test(n)) return 'fertiliser';
+  if (/pesticide|herbicide|fungicide|chemical/.test(n)) return 'chemical';
+  if (/bag|box|crate|tray|sachet|packaging/.test(n)) return 'packaging';
+  if (/milk|egg|honey|wax|meat|fish|carcass/.test(n)) return 'produce';
+  if (/flour|oil|processed/.test(n))                return 'processed';
+  if (/pump|pipe|equipment|tool|net/.test(n))        return 'equipment';
+  return 'produce';   // default harvest outputs to produce
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

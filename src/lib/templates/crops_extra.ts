@@ -1,0 +1,726 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Additional Crop Templates: Rice, Cassava, Groundnut, Sweet Potato, Sorghum,
+// Wheat, Sunflower, Soybean, Cotton, Tobacco
+// ─────────────────────────────────────────────────────────────────────────────
+import type { ProductionTemplate } from '../types';
+
+// ─── RICE ─────────────────────────────────────────────────────────────────────
+export const riceTemplate: ProductionTemplate = {
+  id: 'rice',
+  name: 'Rice (Paddy / Irrigated)',
+  shortName: 'Rice',
+  category: 'crops',
+  species: 'Rice',
+  purpose: 'Grain Production',
+  description: 'Irrigated paddy rice production. 110–130 day crop cycle.',
+  icon: '🌾',
+  color: '#fbbf24',
+  tags: ['rice', 'paddy', 'grain', 'staple'],
+  materials: [
+    { id: 'rice-seed', name: 'Certified Rice Seed', unit: 'kg', category: 'input' },
+    { id: 'rice-fert', name: 'NPK Fertiliser', unit: 'kg', category: 'input' },
+    { id: 'rice-urea', name: 'Urea (top dressing)', unit: 'kg', category: 'input' },
+    { id: 'rice-water', name: 'Irrigation Water', unit: 'litre', category: 'input' },
+    { id: 'paddy', name: 'Paddy Rice', unit: 'tonne', category: 'output' },
+    { id: 'rice-straw', name: 'Rice Straw', unit: 'tonne', category: 'byproduct' },
+  ],
+  kpis: [
+    { id: 'yield', name: 'Grain Yield', unit: 'tonne', benchmark: 5 },
+    { id: 'yield-ha', name: 'Yield / ha', unit: 'tonne', benchmark: 5 },
+    { id: 'days-to-harvest', name: 'Days to Harvest', unit: 'day', benchmark: 120 },
+  ],
+  stages: [
+    {
+      id: 'nursery',
+      name: 'Nursery / Seedbed (0–25 days)',
+      order: 1,
+      durationDays: 25,
+      color: '#86efac',
+      inputs: [
+        { id: 'seed', label: 'Certified Rice Seed', unit: 'kg', required: true },
+      ],
+      activities: [
+        { id: 'soak', name: 'Soak seed 24–48h, incubate 24h', frequency: 'once' },
+        { id: 'nursery-prep', name: 'Prepare nursery bed (1/10th of field area)', frequency: 'once' },
+        { id: 'broadcast', name: 'Broadcast germinated seed on nursery', frequency: 'once' },
+        { id: 'water-nursery', name: 'Maintain thin water layer on nursery', frequency: 'daily' },
+      ],
+      measurements: [
+        { id: 'germination', name: 'Germination Rate', unit: 'percent', frequency: 'once', required: true, benchmark: 90 },
+        { id: 'seedling-height', name: 'Seedling Height', unit: 'celsius', frequency: 'weekly', required: false, benchmark: 20 },
+      ],
+      outputs: [],
+      possibleNextStages: ['transplanting'],
+      alerts: ['Transplant when seedlings reach 20–25 cm (3–4 leaves) at 20–25 days', 'Keep nursery free of weeds'],
+    },
+    {
+      id: 'transplanting',
+      name: 'Land Prep & Transplanting',
+      order: 2,
+      durationDays: 10,
+      color: '#4ade80',
+      inputs: [
+        { id: 'fert-basal', label: 'Basal Fertiliser (NPK)', unit: 'kg', required: true },
+      ],
+      activities: [
+        { id: 'puddle', name: 'Puddle and level field (flood to 5 cm)', frequency: 'once' },
+        { id: 'basal-fert', name: 'Broadcast basal fertiliser before puddling', frequency: 'once' },
+        { id: 'transplant', name: 'Transplant at 20×20cm spacing, 2–3 seedlings/hill', frequency: 'once' },
+        { id: 'water-level', name: 'Maintain 3–5 cm water level after transplanting', frequency: 'daily' },
+      ],
+      measurements: [
+        { id: 'area', name: 'Area Transplanted', unit: 'ha', frequency: 'once', required: true, benchmark: null },
+        { id: 'seedlings-hill', name: 'Seedlings per Hill', unit: 'count', frequency: 'once', required: false, benchmark: 2.5 },
+      ],
+      outputs: [],
+      possibleNextStages: ['tillering'],
+      alerts: ['Allow 1 week for seedling recovery before first top-dressing'],
+    },
+    {
+      id: 'tillering',
+      name: 'Tillering & Vegetative (25–60 DAT)',
+      order: 3,
+      durationDays: 35,
+      color: '#22c55e',
+      inputs: [
+        { id: 'urea1', label: 'Urea (1st top-dressing at 21 DAT)', unit: 'kg', required: true },
+        { id: 'herbicide', label: 'Pre/Post-emergent Herbicide', unit: 'litre', required: false },
+      ],
+      activities: [
+        { id: 'weed', name: 'Weed control — hand/chemical at 21 DAT', frequency: 'once' },
+        { id: 'water-manage', name: 'Water management (alternate wet & dry — AWD)', frequency: 'daily' },
+        { id: 'top-dress', name: 'Apply urea at panicle initiation (PI)', frequency: 'once' },
+        { id: 'pest-scout', name: 'Scout for stem borer, leaf blast', frequency: 'weekly' },
+      ],
+      measurements: [
+        { id: 'tillers-m2', name: 'Tillers / m²', unit: 'count', frequency: 'weekly', required: false, benchmark: 250 },
+        { id: 'pest-incidence', name: 'Pest Incidence Level', unit: 'percent', frequency: 'weekly', required: false, benchmark: 5 },
+        { id: 'water-depth', name: 'Water Level', unit: 'celsius', frequency: 'daily', required: true, benchmark: 5 },
+      ],
+      outputs: [],
+      possibleNextStages: ['heading'],
+      alerts: ['Target 200–300 tillers/m² for high yield', 'Yellow stem borer: spray if >10% dead hearts'],
+    },
+    {
+      id: 'heading',
+      name: 'Heading, Flowering & Grain Fill (60–90 DAT)',
+      order: 4,
+      durationDays: 30,
+      color: '#a3e635',
+      inputs: [
+        { id: 'urea2', label: 'Urea (2nd top-dressing at PI)', unit: 'kg', required: true },
+        { id: 'fungicide', label: 'Tricyclazole / Blast Fungicide', unit: 'litre', required: false },
+      ],
+      activities: [
+        { id: 'flood', name: 'Maintain continuous flood through flowering (7 days)', frequency: 'daily' },
+        { id: 'blast-protect', name: 'Blast spray at heading (if disease pressure)', frequency: 'once' },
+        { id: 'monitor', name: 'Monitor panicle exertion and grain set', frequency: 'weekly' },
+      ],
+      measurements: [
+        { id: 'panicles-m2', name: 'Panicles / m²', unit: 'count', frequency: 'once', required: false, benchmark: 200 },
+        { id: 'grain-set', name: 'Grain Set %', unit: 'percent', frequency: 'once', required: false, benchmark: 85 },
+      ],
+      outputs: [],
+      possibleNextStages: ['harvest'],
+      alerts: ['NEVER run field dry during flowering — sterility results', 'Blast at heading = critical — protect panicle neck'],
+    },
+    {
+      id: 'harvest',
+      name: 'Maturity & Harvest (90–120 DAT)',
+      order: 5,
+      durationDays: 14,
+      color: '#f59e0b',
+      inputs: [],
+      activities: [
+        { id: 'drain', name: 'Drain field 10–14 days before harvest', frequency: 'once' },
+        { id: 'harvest', name: 'Harvest when 80–85% of grains are straw-coloured', frequency: 'once' },
+        { id: 'dry', name: 'Sun-dry paddy to 14% moisture', frequency: 'daily' },
+        { id: 'thresh', name: 'Thresh and clean paddy', frequency: 'once' },
+      ],
+      measurements: [
+        { id: 'yield-paddy', name: 'Paddy Yield', unit: 'tonne', frequency: 'once', required: true, benchmark: null },
+        { id: 'moisture', name: 'Grain Moisture %', unit: 'percent', frequency: 'once', required: true, benchmark: 14 },
+        { id: 'milling-out', name: 'Milling Out-turn', unit: 'percent', frequency: 'once', required: false, benchmark: 68 },
+      ],
+      outputs: [
+        { materialTypeId: 'paddy', quantity: null, unit: 'tonne', routing: 'inventory', qualityGrade: 'A' },
+        { materialTypeId: 'rice-straw', quantity: null, unit: 'tonne', routing: 'own_use', qualityGrade: 'A' },
+      ],
+      possibleNextStages: [],
+      alerts: ['Harvest at 20–25% grain moisture to reduce shattering', 'Dry to 14% before storage to prevent heating'],
+    },
+  ],
+};
+
+// ─── CASSAVA ──────────────────────────────────────────────────────────────────
+export const cassavaTemplate: ProductionTemplate = {
+  id: 'cassava',
+  name: 'Cassava',
+  shortName: 'Cassava',
+  category: 'crops',
+  species: 'Cassava',
+  purpose: 'Root Tuber Production',
+  description: 'Cassava for fresh market, flour, or starch. 9–18 month crop.',
+  icon: '🌿',
+  color: '#86efac',
+  tags: ['cassava', 'root', 'tuber', 'staple', 'starch'],
+  materials: [
+    { id: 'cass-stake', name: 'Cassava Stakes (30–40 cm)', unit: 'count', category: 'input' },
+    { id: 'cass-fert', name: 'NPK Fertiliser', unit: 'kg', category: 'input' },
+    { id: 'cass-root', name: 'Fresh Cassava Roots', unit: 'tonne', category: 'output' },
+    { id: 'cass-leaf', name: 'Cassava Leaves', unit: 'kg', category: 'byproduct' },
+  ],
+  kpis: [
+    { id: 'yield', name: 'Root Yield', unit: 'tonne', benchmark: 25 },
+    { id: 'hyi', name: 'Harvest Index', unit: 'ratio', benchmark: 0.65 },
+    { id: 'dry-matter', name: 'Dry Matter %', unit: 'percent', benchmark: 30 },
+  ],
+  stages: [
+    {
+      id: 'land-prep',
+      name: 'Land Preparation & Planting',
+      order: 1,
+      durationDays: 21,
+      color: '#4ade80',
+      inputs: [
+        { id: 'stakes', label: 'Cassava Stakes (healthy, disease-free)', unit: 'count', required: true },
+        { id: 'fert-basal', label: 'Basal NPK (Optional — cassava tolerates poor soils)', unit: 'kg', required: false },
+      ],
+      activities: [
+        { id: 'ridge', name: 'Form ridges or mounds (1m × 1m spacing)', frequency: 'once' },
+        { id: 'plant', name: 'Plant stakes (horizontal or slanted 45°, 5–7 cm depth)', frequency: 'once' },
+        { id: 'weed', name: 'Clear weeds before planting', frequency: 'once' },
+      ],
+      measurements: [
+        { id: 'area-planted', name: 'Area Planted', unit: 'ha', frequency: 'once', required: true, benchmark: null },
+        { id: 'plant-density', name: 'Plant Density', unit: 'count', frequency: 'once', required: false, benchmark: 10000 },
+      ],
+      outputs: [],
+      possibleNextStages: ['growing'],
+      alerts: ['Plant at start of rains for rain-fed; any time for irrigated', 'Avoid waterlogged soils — cassava roots rot in standing water'],
+    },
+    {
+      id: 'growing',
+      name: 'Vegetative Growth (1–9 months)',
+      order: 2,
+      durationDays: 240,
+      color: '#22c55e',
+      inputs: [
+        { id: 'urea', label: 'Urea / Nitrogen Top-dressing (month 2)', unit: 'kg', required: false },
+      ],
+      activities: [
+        { id: 'weed-3mo', name: 'Weed at 1, 3, and 6 months after planting', frequency: 'monthly' },
+        { id: 'pest-scout', name: 'Scout for cassava mosaic disease, mealybug, whitefly', frequency: 'monthly' },
+        { id: 'cbd-inspect', name: 'Check for Cassava Brown Streak Disease (CBSD)', frequency: 'monthly' },
+      ],
+      measurements: [
+        { id: 'canopy', name: 'Canopy Cover', unit: 'percent', frequency: 'monthly', required: false, benchmark: 90 },
+        { id: 'cmd-severity', name: 'Cassava Mosaic Severity (1–5)', unit: 'ratio', frequency: 'monthly', required: false, benchmark: 1 },
+      ],
+      outputs: [],
+      possibleNextStages: ['harvest'],
+      alerts: ['Cassava mosaic: rogue out infected plants immediately', 'Always use virus-tested planting material'],
+    },
+    {
+      id: 'harvest',
+      name: 'Harvest (9–18 months)',
+      order: 3,
+      durationDays: 30,
+      color: '#f59e0b',
+      inputs: [],
+      activities: [
+        { id: 'cut-stems', name: 'Harvest stakes before pulling roots (for next planting)', frequency: 'once' },
+        { id: 'pull', name: 'Pull roots and clean', frequency: 'daily' },
+        { id: 'process', name: 'Process within 3 days of harvest (roots deteriorate fast)', frequency: 'daily' },
+      ],
+      measurements: [
+        { id: 'yield', name: 'Root Yield', unit: 'tonne', frequency: 'once', required: true, benchmark: null },
+        { id: 'dry-matter', name: 'Dry Matter %', unit: 'percent', frequency: 'once', required: false, benchmark: 30 },
+        { id: 'marketable', name: 'Marketable Root %', unit: 'percent', frequency: 'once', required: false, benchmark: 85 },
+      ],
+      outputs: [
+        { materialTypeId: 'cass-root', quantity: null, unit: 'tonne', routing: 'processing', qualityGrade: 'A' },
+        { materialTypeId: 'cass-leaf', quantity: null, unit: 'kg', routing: 'inventory', qualityGrade: 'A' },
+      ],
+      possibleNextStages: [],
+      alerts: ['Process or sell within 3 days — post-harvest deterioration (PPD) starts quickly', 'Dry or chip cassava immediately if not selling fresh'],
+    },
+  ],
+};
+
+// ─── GROUNDNUT / PEANUT ───────────────────────────────────────────────────────
+export const groundnutTemplate: ProductionTemplate = {
+  id: 'groundnut',
+  name: 'Groundnut (Arachis hypogaea)',
+  shortName: 'Groundnut',
+  category: 'crops',
+  species: 'Groundnut',
+  purpose: 'Oilseed / Nut Production',
+  description: 'Groundnut for oil, roasting, and peanut butter. 90–130 day crop.',
+  icon: '🥜',
+  color: '#b45309',
+  tags: ['groundnut', 'peanut', 'oilseed', 'legume'],
+  materials: [
+    { id: 'gn-seed', name: 'Groundnut Seed (shelled)', unit: 'kg', category: 'input' },
+    { id: 'gn-fert', name: 'Basal Fertiliser (SSP / Compound D)', unit: 'kg', category: 'input' },
+    { id: 'gn-inoc', name: 'Rhizobium Inoculant', unit: 'kg', category: 'input' },
+    { id: 'gn-pods', name: 'Groundnut Pods', unit: 'tonne', category: 'output' },
+    { id: 'gn-hay', name: 'Groundnut Hay (vines)', unit: 'tonne', category: 'byproduct' },
+  ],
+  kpis: [
+    { id: 'pod-yield', name: 'Pod Yield', unit: 'tonne', benchmark: 2.5 },
+    { id: 'shelling-pct', name: 'Shelling %', unit: 'percent', benchmark: 70 },
+    { id: 'oil-content', name: 'Oil Content', unit: 'percent', benchmark: 48 },
+  ],
+  stages: [
+    {
+      id: 'planting',
+      name: 'Land Preparation & Planting',
+      order: 1,
+      durationDays: 14,
+      color: '#fcd34d',
+      inputs: [
+        { id: 'seed', label: 'Groundnut Seed (unhulled or shelled)', unit: 'kg', required: true },
+        { id: 'fert', label: 'Compound D / SSP (basal)', unit: 'kg', required: true },
+        { id: 'rhizobium', label: 'Rhizobium Inoculant', unit: 'kg', required: false },
+      ],
+      activities: [
+        { id: 'fine-tilth', name: 'Prepare fine, well-drained seedbed', frequency: 'once' },
+        { id: 'inoculate', name: 'Coat seed with Rhizobium before planting', frequency: 'once' },
+        { id: 'plant', name: 'Plant at 45×15cm (single row) or 45×30cm (double)', frequency: 'once' },
+        { id: 'fert-basal', name: 'Apply basal fertiliser in furrow', frequency: 'once' },
+      ],
+      measurements: [
+        { id: 'area', name: 'Area Planted', unit: 'ha', frequency: 'once', required: true, benchmark: null },
+        { id: 'seed-rate', name: 'Seed Rate Used', unit: 'kg', frequency: 'once', required: false, benchmark: 75 },
+        { id: 'germ', name: 'Germination Count (14 days)', unit: 'percent', frequency: 'once', required: false, benchmark: 85 },
+      ],
+      outputs: [],
+      possibleNextStages: ['vegetative'],
+      alerts: ['Groundnut fixes own nitrogen — Rhizobium inoculant critical on first-time fields', 'Plant within 2 weeks of first rains'],
+    },
+    {
+      id: 'vegetative',
+      name: 'Vegetative & Flowering (14–45 DAP)',
+      order: 2,
+      durationDays: 31,
+      color: '#86efac',
+      inputs: [
+        { id: 'gypsum', label: 'Gypsum (calcium for pod fill, at pegging)', unit: 'kg', required: false },
+      ],
+      activities: [
+        { id: 'weed-1st', name: '1st weeding at 21 DAP', frequency: 'once' },
+        { id: 'weed-2nd', name: '2nd weeding at 35–42 DAP (before canopy closes)', frequency: 'once' },
+        { id: 'gypsum', name: 'Broadcast gypsum at pegging (45 DAP)', frequency: 'once' },
+        { id: 'leafspot-scout', name: 'Scout for early leaf spot (Cercospora)', frequency: 'weekly' },
+      ],
+      measurements: [
+        { id: 'weed-free', name: 'Weed-free period maintained (days)', unit: 'day', frequency: 'once', required: false, benchmark: 45 },
+        { id: 'leafspot', name: 'Leaf Spot Severity (1–9 scale)', unit: 'ratio', frequency: 'weekly', required: false, benchmark: 1 },
+      ],
+      outputs: [],
+      possibleNextStages: ['pod-fill'],
+      alerts: ['Weeding is critical — groundnut yields drop 50–80% with weed competition', 'Calcium at pegging prevents empty pods'],
+    },
+    {
+      id: 'pod-fill',
+      name: 'Pod Fill & Maturity (45–120 DAP)',
+      order: 3,
+      durationDays: 75,
+      color: '#f59e0b',
+      inputs: [],
+      activities: [
+        { id: 'leafspot-spray', name: 'Chlorothalonil spray for late leaf spot', frequency: 'once' },
+        { id: 'mat-test', name: 'Check pod maturity (scrape pod — dark inner wall = ready)', frequency: 'weekly' },
+        { id: 'harvest', name: 'Pull plants and windrow for 2–3 days', frequency: 'once' },
+      ],
+      measurements: [
+        { id: 'maturity-pct', name: 'Mature Pods %', unit: 'percent', frequency: 'weekly', required: true, benchmark: 75 },
+        { id: 'aflatoxin-risk', name: 'Aflatoxin Risk Level', unit: 'percent', frequency: 'once', required: false, benchmark: 0 },
+      ],
+      outputs: [
+        { materialTypeId: 'gn-pods', quantity: null, unit: 'tonne', routing: 'inventory', qualityGrade: 'A' },
+        { materialTypeId: 'gn-hay', quantity: null, unit: 'tonne', routing: 'own_use', qualityGrade: 'A' },
+      ],
+      possibleNextStages: [],
+      alerts: ['Harvest on time — late harvest increases aflatoxin contamination risk', 'Dry immediately to <9% moisture to prevent aflatoxin'],
+    },
+  ],
+};
+
+// ─── SWEET POTATO ─────────────────────────────────────────────────────────────
+export const sweetPotatoTemplate: ProductionTemplate = {
+  id: 'sweet-potato',
+  name: 'Sweet Potato',
+  shortName: 'Sweet Potato',
+  category: 'crops',
+  species: 'Sweet Potato',
+  purpose: 'Root Tuber Production',
+  description: 'Sweet potato for fresh market and food processing. 3–5 month crop.',
+  icon: '🍠',
+  color: '#f97316',
+  tags: ['sweet potato', 'root', 'tuber', 'vitamin A'],
+  materials: [
+    { id: 'sp-vine', name: 'Vine Cuttings (30–40 cm)', unit: 'count', category: 'input' },
+    { id: 'sp-fert', name: 'NPK Fertiliser', unit: 'kg', category: 'input' },
+    { id: 'sp-root', name: 'Sweet Potato Roots', unit: 'tonne', category: 'output' },
+    { id: 'sp-vine-out', name: 'Vine Biomass (feed / cuttings)', unit: 'tonne', category: 'byproduct' },
+  ],
+  kpis: [
+    { id: 'yield', name: 'Root Yield', unit: 'tonne', benchmark: 20 },
+    { id: 'large-pct', name: 'Large Grade %', unit: 'percent', benchmark: 60 },
+  ],
+  stages: [
+    {
+      id: 'planting',
+      name: 'Land Prep & Planting',
+      order: 1,
+      durationDays: 14,
+      color: '#fb923c',
+      inputs: [
+        { id: 'vines', label: 'Vine Cuttings (30–45 cm)', unit: 'count', required: true },
+        { id: 'fert', label: 'Compound D or NPK Basal', unit: 'kg', required: true },
+      ],
+      activities: [
+        { id: 'ridge', name: 'Form ridges 30–45 cm high (30 cm wide, 90 cm apart)', frequency: 'once' },
+        { id: 'fert-ridge', name: 'Apply fertiliser into ridge before planting', frequency: 'once' },
+        { id: 'plant', name: 'Plant cuttings on ridge (45 cm apart), bury 2 nodes', frequency: 'once' },
+        { id: 'water', name: 'Water if no rain within 3 days', frequency: 'daily' },
+      ],
+      measurements: [
+        { id: 'area', name: 'Area Planted', unit: 'ha', frequency: 'once', required: true, benchmark: null },
+        { id: 'take', name: 'Vine Take (% established at 14 days)', unit: 'percent', frequency: 'once', required: false, benchmark: 90 },
+      ],
+      outputs: [],
+      possibleNextStages: ['vegetative'],
+      alerts: ['Use virus-free certified vines for maximum yield', 'Plant at start of rains or under irrigation'],
+    },
+    {
+      id: 'vegetative',
+      name: 'Vine Spread & Root Initiation (14–60 DAP)',
+      order: 2,
+      durationDays: 46,
+      color: '#22c55e',
+      inputs: [
+        { id: 'top-dress', label: 'Urea / CAN Top-dressing (month 1)', unit: 'kg', required: false },
+      ],
+      activities: [
+        { id: 'weed-1', name: '1st weeding at 21 DAP', frequency: 'once' },
+        { id: 'weed-2', name: '2nd weeding at 45 DAP', frequency: 'once' },
+        { id: 'vine-turn', name: 'Turn vines every 3 weeks (prevent aerial roots)', frequency: 'weekly' },
+        { id: 'pest', name: 'Scout for sweet potato weevil', frequency: 'weekly' },
+      ],
+      measurements: [
+        { id: 'canopy', name: 'Canopy Cover', unit: 'percent', frequency: 'weekly', required: false, benchmark: 80 },
+        { id: 'weevil', name: 'Sweet Potato Weevil Incidence', unit: 'percent', frequency: 'weekly', required: false, benchmark: 5 },
+      ],
+      outputs: [],
+      possibleNextStages: ['root-fill'],
+      alerts: ['Sweet potato weevil: critical pest — avoid planting near old fields', 'Vine turning must be done gently to avoid vine tip rooting'],
+    },
+    {
+      id: 'root-fill',
+      name: 'Root Fill & Harvest (60–120 DAP)',
+      order: 3,
+      durationDays: 60,
+      color: '#f59e0b',
+      inputs: [],
+      activities: [
+        { id: 'scout-maturity', name: 'Check root size at 90 DAP (lift probe plant)', frequency: 'weekly' },
+        { id: 'cut-vines', name: 'Cut vines 1 week before harvest (stops vine growth)', frequency: 'once' },
+        { id: 'harvest', name: 'Harvest with fork, avoid root damage', frequency: 'daily' },
+        { id: 'cure', name: 'Cure roots 4–7 days at 30°C 85% RH (improves shelf life)', frequency: 'daily' },
+      ],
+      measurements: [
+        { id: 'yield', name: 'Root Yield', unit: 'tonne', frequency: 'once', required: true, benchmark: null },
+        { id: 'large-grade', name: 'Large Grade % (>200g)', unit: 'percent', frequency: 'once', required: false, benchmark: 60 },
+        { id: 'weevil-damage', name: 'Weevil Damage %', unit: 'percent', frequency: 'once', required: false, benchmark: 5 },
+      ],
+      outputs: [
+        { materialTypeId: 'sp-root', quantity: null, unit: 'tonne', routing: 'inventory', qualityGrade: 'A' },
+        { materialTypeId: 'sp-vine-out', quantity: null, unit: 'tonne', routing: 'own_use', qualityGrade: 'A' },
+      ],
+      possibleNextStages: [],
+      alerts: ['Harvest at 3–4 months (table varieties) or 5 months (starch varieties)', 'Curing at 29–32°C increases sugar content and extends shelf life'],
+    },
+  ],
+};
+
+// ─── SORGHUM ─────────────────────────────────────────────────────────────────
+export const sorghumTemplate: ProductionTemplate = {
+  id: 'sorghum',
+  name: 'Sorghum (Grain)',
+  shortName: 'Sorghum',
+  category: 'crops',
+  species: 'Sorghum',
+  purpose: 'Grain Production',
+  description: 'Drought-tolerant grain sorghum for food, feed, and brewing. 90–120 day crop.',
+  icon: '🌾',
+  color: '#d97706',
+  tags: ['sorghum', 'grain', 'drought-tolerant', 'beer', 'feed'],
+  materials: [
+    { id: 'sorghum-seed', name: 'Sorghum Seed', unit: 'kg', category: 'input' },
+    { id: 'sorghum-fert', name: 'Compound D + Urea', unit: 'kg', category: 'input' },
+    { id: 'sorghum-grain', name: 'Sorghum Grain', unit: 'tonne', category: 'output' },
+    { id: 'sorghum-stover', name: 'Sorghum Stover (feed)', unit: 'tonne', category: 'byproduct' },
+  ],
+  kpis: [
+    { id: 'yield', name: 'Grain Yield', unit: 'tonne', benchmark: 3.5 },
+    { id: 'moisture', name: 'Harvest Moisture', unit: 'percent', benchmark: 14 },
+  ],
+  stages: [
+    {
+      id: 'planting',
+      name: 'Planting',
+      order: 1,
+      durationDays: 10,
+      color: '#fbbf24',
+      inputs: [
+        { id: 'seed', label: 'Sorghum Seed', unit: 'kg', required: true },
+        { id: 'basal', label: 'Compound D (basal)', unit: 'kg', required: true },
+      ],
+      activities: [
+        { id: 'plant', name: 'Plant 2–4 seeds per station, 75×25 cm', frequency: 'once' },
+        { id: 'thin', name: 'Thin to 1–2 plants at 14 DAP', frequency: 'once' },
+        { id: 'fert', name: 'Apply basal at planting (5 cm below/beside seed)', frequency: 'once' },
+      ],
+      measurements: [
+        { id: 'area', name: 'Area Planted', unit: 'ha', frequency: 'once', required: true, benchmark: null },
+        { id: 'germ', name: 'Germination %', unit: 'percent', frequency: 'once', required: false, benchmark: 90 },
+      ],
+      outputs: [],
+      possibleNextStages: ['growing'],
+      alerts: ['Sorghum seed is small — plant shallow (3–4 cm)', 'Staggered planting avoids bird pressure at all fields maturing together'],
+    },
+    {
+      id: 'growing',
+      name: 'Growing (10–75 DAP)',
+      order: 2,
+      durationDays: 65,
+      color: '#22c55e',
+      inputs: [
+        { id: 'urea', label: 'Urea Top-dressing (21 DAP)', unit: 'kg', required: true },
+      ],
+      activities: [
+        { id: 'weed', name: 'Weed at 21 and 42 DAP', frequency: 'once' },
+        { id: 'top-dress', name: 'Top-dress urea at 21 DAP', frequency: 'once' },
+        { id: 'midge-scout', name: 'Scout for sorghum midge at heading', frequency: 'weekly' },
+        { id: 'bird-scare', name: 'Bird scaring at grain fill stage', frequency: 'daily' },
+      ],
+      measurements: [
+        { id: 'plant-stand', name: 'Plant Stand (plants/m²)', unit: 'count', frequency: 'once', required: false, benchmark: 5 },
+        { id: 'midge', name: 'Midge Infestation Level', unit: 'percent', frequency: 'weekly', required: false, benchmark: 5 },
+      ],
+      outputs: [],
+      possibleNextStages: ['harvest'],
+      alerts: ['Sorghum midge is critical at heading — spray if >1 midge/head', 'Birds are major pest from dough stage — continuous scaring needed'],
+    },
+    {
+      id: 'harvest',
+      name: 'Harvest (90–120 DAP)',
+      order: 3,
+      durationDays: 14,
+      color: '#f59e0b',
+      inputs: [],
+      activities: [
+        { id: 'check-mat', name: 'Harvest when 80% of heads are straw-coloured', frequency: 'once' },
+        { id: 'cut-thresh', name: 'Cut heads, thresh, and clean', frequency: 'daily' },
+        { id: 'dry-store', name: 'Dry to 13% moisture before storage', frequency: 'daily' },
+      ],
+      measurements: [
+        { id: 'yield', name: 'Grain Yield', unit: 'tonne', frequency: 'once', required: true, benchmark: null },
+        { id: 'moisture', name: 'Grain Moisture %', unit: 'percent', frequency: 'once', required: true, benchmark: 14 },
+      ],
+      outputs: [
+        { materialTypeId: 'sorghum-grain', quantity: null, unit: 'tonne', routing: 'inventory', qualityGrade: 'A' },
+        { materialTypeId: 'sorghum-stover', quantity: null, unit: 'tonne', routing: 'own_use', qualityGrade: 'A' },
+      ],
+      possibleNextStages: [],
+      alerts: ['Grain sorghum stores well — dry to 13% for long-term storage', 'Premium for food-grade white sorghum (Chibuku, sadza)'],
+    },
+  ],
+};
+
+// ─── SUNFLOWER ───────────────────────────────────────────────────────────────
+export const sunflowerTemplate: ProductionTemplate = {
+  id: 'sunflower',
+  name: 'Sunflower',
+  shortName: 'Sunflower',
+  category: 'crops',
+  species: 'Sunflower',
+  purpose: 'Oilseed Production',
+  description: 'Sunflower for cooking oil and animal feed. 90–110 day crop.',
+  icon: '🌻',
+  color: '#fbbf24',
+  tags: ['sunflower', 'oilseed', 'cooking oil', 'livestock feed'],
+  materials: [
+    { id: 'sf-seed', name: 'Sunflower Seed (hybrid)', unit: 'kg', category: 'input' },
+    { id: 'sf-fert', name: 'NPK Fertiliser', unit: 'kg', category: 'input' },
+    { id: 'sf-heads', name: 'Sunflower Heads / Seed', unit: 'tonne', category: 'output' },
+    { id: 'sf-meal', name: 'Sunflower Oil Meal (after pressing)', unit: 'tonne', category: 'byproduct' },
+  ],
+  kpis: [
+    { id: 'yield', name: 'Seed Yield', unit: 'tonne', benchmark: 2.5 },
+    { id: 'oil-content', name: 'Oil Content', unit: 'percent', benchmark: 40 },
+  ],
+  stages: [
+    {
+      id: 'planting',
+      name: 'Planting',
+      order: 1,
+      durationDays: 10,
+      color: '#fde68a',
+      inputs: [
+        { id: 'seed', label: 'Hybrid Sunflower Seed', unit: 'kg', required: true },
+        { id: 'fert', label: 'Compound D Basal', unit: 'kg', required: true },
+      ],
+      activities: [
+        { id: 'plant', name: 'Plant at 90×30 cm, 1 seed per station, 2–4 cm deep', frequency: 'once' },
+        { id: 'fert', name: 'Apply basal fert in furrow at planting', frequency: 'once' },
+      ],
+      measurements: [
+        { id: 'area', name: 'Area Planted', unit: 'ha', frequency: 'once', required: true, benchmark: null },
+      ],
+      outputs: [],
+      possibleNextStages: ['growing'],
+      alerts: [],
+    },
+    {
+      id: 'growing',
+      name: 'Vegetative & Flowering (10–75 DAP)',
+      order: 2,
+      durationDays: 65,
+      color: '#22c55e',
+      inputs: [
+        { id: 'urea', label: 'Urea Top-dressing (25 DAP)', unit: 'kg', required: true },
+      ],
+      activities: [
+        { id: 'weed', name: 'Weed at 21 DAP', frequency: 'once' },
+        { id: 'top-dress', name: 'Urea top-dressing at 25 DAP', frequency: 'once' },
+        { id: 'bee-pollination', name: 'Ensure bee pollination at flowering (place hives near field)', frequency: 'once' },
+        { id: 'mealyb', name: 'Scout for sunflower stem weevil and mealybug', frequency: 'weekly' },
+      ],
+      measurements: [
+        { id: 'heads-formed', name: 'Heads Formed / ha', unit: 'count', frequency: 'once', required: false, benchmark: 27000 },
+      ],
+      outputs: [],
+      possibleNextStages: ['harvest'],
+      alerts: ['Pollinator access critical — head yields drop 30% without bees', 'Stem canker (Sclerotinia) — avoid overhead irrigation at flowering'],
+    },
+    {
+      id: 'harvest',
+      name: 'Harvest (90–110 DAP)',
+      order: 3,
+      durationDays: 14,
+      color: '#f59e0b',
+      inputs: [],
+      activities: [
+        { id: 'check', name: 'Harvest when back of head turns yellow (25% moisture)', frequency: 'once' },
+        { id: 'cut-thresh', name: 'Cut heads, thresh, clean', frequency: 'daily' },
+        { id: 'dry', name: 'Dry to 9% moisture', frequency: 'daily' },
+      ],
+      measurements: [
+        { id: 'yield', name: 'Seed Yield', unit: 'tonne', frequency: 'once', required: true, benchmark: null },
+        { id: 'moisture', name: 'Seed Moisture %', unit: 'percent', frequency: 'once', required: true, benchmark: 9 },
+        { id: 'oil-content', name: 'Oil Content %', unit: 'percent', frequency: 'once', required: false, benchmark: 40 },
+      ],
+      outputs: [
+        { materialTypeId: 'sf-heads', quantity: null, unit: 'tonne', routing: 'inventory', qualityGrade: 'A' },
+      ],
+      possibleNextStages: [],
+      alerts: ['Sunflower deteriorates fast at high moisture — dry immediately', 'Premium for high-oleic varieties'],
+    },
+  ],
+};
+
+// ─── SOYBEAN ─────────────────────────────────────────────────────────────────
+export const soybeanTemplate: ProductionTemplate = {
+  id: 'soybean',
+  name: 'Soybean',
+  shortName: 'Soybean',
+  category: 'crops',
+  species: 'Soybean',
+  purpose: 'Oilseed / Protein Production',
+  description: 'Soybean for oil, meal, and food. Nitrogen-fixing legume. 90–120 days.',
+  icon: '🫘',
+  color: '#65a30d',
+  tags: ['soybean', 'soya', 'legume', 'protein', 'oilseed'],
+  materials: [
+    { id: 'soy-seed', name: 'Soybean Seed (inoculated)', unit: 'kg', category: 'input' },
+    { id: 'soy-fert', name: 'SSP / Compound D (no nitrogen)', unit: 'kg', category: 'input' },
+    { id: 'soy-rhizobium', name: 'Bradyrhizobium Inoculant', unit: 'kg', category: 'input' },
+    { id: 'soybeans', name: 'Soybean Grain', unit: 'tonne', category: 'output' },
+    { id: 'soy-meal', name: 'Soybean Meal (processed)', unit: 'tonne', category: 'output' },
+  ],
+  kpis: [
+    { id: 'yield', name: 'Grain Yield', unit: 'tonne', benchmark: 2.5 },
+    { id: 'protein', name: 'Protein %', unit: 'percent', benchmark: 38 },
+  ],
+  stages: [
+    {
+      id: 'planting',
+      name: 'Planting',
+      order: 1,
+      durationDays: 14,
+      color: '#86efac',
+      inputs: [
+        { id: 'seed', label: 'Inoculated Soybean Seed', unit: 'kg', required: true },
+        { id: 'fert', label: 'SSP (phosphorus, no N)', unit: 'kg', required: true },
+      ],
+      activities: [
+        { id: 'inoculate', name: 'Coat seed with Bradyrhizobium inoculant (day of planting)', frequency: 'once' },
+        { id: 'plant', name: 'Plant at 45×5 cm or 45×10 cm, 2–4 cm deep', frequency: 'once' },
+      ],
+      measurements: [
+        { id: 'area', name: 'Area Planted', unit: 'ha', frequency: 'once', required: true, benchmark: null },
+        { id: 'germ', name: 'Germination %', unit: 'percent', frequency: 'once', required: false, benchmark: 90 },
+      ],
+      outputs: [],
+      possibleNextStages: ['growing'],
+      alerts: ['NEVER apply nitrogen fertiliser to soybeans — kills Rhizobium nodules', 'Plant within 24h of inoculation (shade inoculant from sunlight)'],
+    },
+    {
+      id: 'growing',
+      name: 'Growing & Podding (14–80 DAP)',
+      order: 2,
+      durationDays: 66,
+      color: '#22c55e',
+      inputs: [],
+      activities: [
+        { id: 'weed', name: 'Weed at 21 and 35 DAP', frequency: 'once' },
+        { id: 'scout-stink', name: 'Scout for stink bug at podding', frequency: 'weekly' },
+        { id: 'rust-check', name: 'Check for Asian soybean rust (pustules on leaves)', frequency: 'weekly' },
+      ],
+      measurements: [
+        { id: 'nodulation', name: 'Nodulation (pink nodules on roots at 30 DAP)', unit: 'count', frequency: 'once', required: false, benchmark: 20 },
+        { id: 'pods-per-plant', name: 'Pods per Plant', unit: 'count', frequency: 'once', required: false, benchmark: 40 },
+      ],
+      outputs: [],
+      possibleNextStages: ['harvest'],
+      alerts: ['Check nodulation at 30 DAP — plants should have 20+ pink nodules', 'Stink bug at podding causes shrivelled seeds'],
+    },
+    {
+      id: 'harvest',
+      name: 'Harvest (80–110 DAP)',
+      order: 3,
+      durationDays: 14,
+      color: '#f59e0b',
+      inputs: [],
+      activities: [
+        { id: 'time', name: 'Harvest when 95% of pods are yellow/brown', frequency: 'once' },
+        { id: 'thresh', name: 'Thresh and clean', frequency: 'daily' },
+        { id: 'dry', name: 'Dry to 12% moisture', frequency: 'daily' },
+      ],
+      measurements: [
+        { id: 'yield', name: 'Grain Yield', unit: 'tonne', frequency: 'once', required: true, benchmark: null },
+        { id: 'moisture', name: 'Moisture %', unit: 'percent', frequency: 'once', required: true, benchmark: 12 },
+        { id: 'splits', name: 'Split Grain %', unit: 'percent', frequency: 'once', required: false, benchmark: 5 },
+      ],
+      outputs: [
+        { materialTypeId: 'soybeans', quantity: null, unit: 'tonne', routing: 'inventory', qualityGrade: 'A' },
+      ],
+      possibleNextStages: [],
+      alerts: ['Timely harvest critical — pods shatter if left too long', 'Premium for food-grade (edamame / tofu grade)'],
+    },
+  ],
+};
