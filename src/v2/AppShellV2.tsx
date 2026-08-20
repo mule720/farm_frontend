@@ -27,12 +27,19 @@ import WeatherModule from '@/pages/ai/WeatherModule';
 import SustainabilityModule from '@/pages/ai/SustainabilityModule';
 import SmartDevices from '@/pages/ai/SmartDevices';
 import WaterManagement from '@/pages/iot/WaterManagement';
+import AquacultureDashboard from '@/pages/iot/AquacultureDashboard';
+import PoultryHouseDashboard from '@/pages/iot/PoultryHouse';
+import EnergyMonitor from '@/pages/iot/EnergyMonitor';
+import SoilDepth from '@/pages/iot/SoilDepth';
+import AutomationRules from '@/pages/iot/AutomationRules';
 
 type Page = 'dashboard' | 'production' | 'inventory' | 'sales' | 'marketplace-food'
            | 'marketplace-supply' | 'marketplace-services' | 'finance' | 'reports'
            | 'config' | 'enterprise' | 'cycle' | 'new-cycle' | 'processing'
            | 'ai-predictive' | 'ai-financial' | 'ai-smart' | 'ai-vision'
-           | 'ai-weather' | 'ai-sustainability' | 'ai-devices' | 'iot-water';
+           | 'ai-weather' | 'ai-sustainability' | 'ai-devices' | 'iot-water'
+           | 'iot-aquaculture' | 'iot-poultry'
+           | 'iot-energy' | 'iot-soil' | 'iot-automation';
 
 interface NavItem {
   id: Page;
@@ -61,6 +68,11 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'ai-sustainability', label: 'Sustainability', icon: <Leaf className="w-4 h-4" />,   section: 'ai' },
   { id: 'ai-devices',       label: 'Smart Devices',  icon: <Radio className="w-4 h-4" />,   section: 'ai' },
   { id: 'iot-water',        label: 'Water Mgmt',     icon: <Zap className="w-4 h-4" />,      section: 'ai' },
+  { id: 'iot-aquaculture',  label: 'Aquaculture',    icon: <Activity className="w-4 h-4" />,   section: 'ai' },
+  { id: 'iot-poultry',      label: 'Poultry Houses', icon: <Activity className="w-4 h-4" />,   section: 'ai' },
+  { id: 'iot-energy',       label: 'Energy',         icon: <Zap className="w-4 h-4" />,        section: 'ai' },
+  { id: 'iot-soil',         label: 'Soil Depth',     icon: <Activity className="w-4 h-4" />,   section: 'ai' },
+  { id: 'iot-automation',   label: 'Automation',     icon: <Zap className="w-4 h-4" />,        section: 'ai' },
   { id: 'config',        label: 'Settings',       icon: <Settings className="w-4 h-4" />,   section: 'bottom' },
 ];
 
@@ -119,6 +131,16 @@ export default function AppShellV2() {
         return <SmartDevices />;
       case 'iot-water':
         return <WaterManagement />;
+      case 'iot-aquaculture':
+        return <AquacultureDashboard />;
+      case 'iot-poultry':
+        return <PoultryHouseDashboard />;
+      case 'iot-energy':
+        return <EnergyMonitor />;
+      case 'iot-soil':
+        return <SoilDepth />;
+      case 'iot-automation':
+        return <AutomationRules />;
       case 'marketplace-food':
         return <AgriFood />;
       case 'marketplace-supply':
