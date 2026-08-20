@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Brain, TrendingUp, TrendingDown, AlertTriangle, Calendar, BarChart2,
   Leaf, Bird, ShoppingCart, Activity, CheckCircle, Clock, ChevronRight,
   Sprout, Zap,
 } from 'lucide-react';
+import { useOrg } from '@/store/orgStore';
+import { getTemplate } from '@/lib/templates';
 
 interface Prediction {
   id: string;
@@ -75,7 +77,39 @@ function CalendarIcon({ type }: { type: string }) {
 }
 
 export default function PredictiveAIModule() {
+  const { org, cycles } = useOrg();
   const [tab, setTab] = useState<'disease' | 'yield' | 'fcr' | 'market' | 'calendar'>('disease');
+
+  // Build real calendar events from active cycle stages
+  const realCalendar = useMemo(() => {
+    if (!org) return [];
+    const events: { date: string; event: string; type: string; status: string }[] = [];
+    const today = new Date();
+
+    cycles.filter(c => c.status === 'active').forEach(c => {
+      const ent = org.enterprises.find(e => e.id === c.enterpriseId);
+      const tpl = ent ? getTemplate(ent.templateId) : null;
+      const entName = ent?.name ?? 'Cycle';
+
+      c.stages.forEach(stage => {
+        if (stage.status === 'completed') return;
+        if (stage.targetEndDate) {
+          const d = new Date(stage.targetEndDate);
+          const daysOut = Math.round((d.getTime() - today.getTime()) / 86400000);
+          if (daysOut >= -3 && daysOut <= 60) {
+            events.push({
+              date: stage.targetEndDate,
+              event: `${entName} — ${stage.name} stage target end`,
+              type: tpl?.category === 'crops' ? 'harvest' : 'planting',
+              status: daysOut < 0 ? 'overdue' : daysOut <= 7 ? 'upcoming' : 'planned',
+            });
+          }
+        }
+      });
+    });
+
+    return events.sort((a, b) => a.date.localeCompare(b.date));
+  }, [org, cycles]);
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
@@ -249,23 +283,51 @@ export default function PredictiveAIModule() {
 
       {tab === 'calendar' && (
         <div className="space-y-3">
-          <div className="text-sm text-slate-500">AI-generated farm activity calendar based on production cycles, growth stages, and historical schedules</div>
-          {CROP_CALENDAR.map((ev, i) => (
-            <div key={i} className="flex items-center gap-3 bg-white rounded-xl border border-slate-200 px-4 py-3">
-              <CalendarIcon type={ev.type} />
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium text-slate-800 truncate">{ev.event}</div>
-                <div className="text-xs text-slate-400 mt-0.5 capitalize">{ev.type}</div>
-              </div>
-              <div className="text-right flex-shrink-0">
-                <div className="text-sm font-semibold text-slate-700">{ev.date}</div>
-                <div className="flex items-center gap-1 justify-end mt-0.5">
-                  <Clock className="w-3 h-3 text-slate-400" />
-                  <span className="text-[10px] text-slate-400">upcoming</span>
+          <div className="text-sm text-slate-500">Farm activity calendar from your production cycles + AI-recommended activities</div>
+
+          {/* Real cycle events */}
+          {realCalendar.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide">From Your Production Cycles</div>
+              {realCalendar.map((ev, i) => (
+                <div key={i} className="flex items-center gap-3 bg-white rounded-xl border border-slate-200 px-4 py-3">
+                  <CalendarIcon type={ev.type} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-slate-800 truncate">{ev.event}</div>
+                    <div className="text-xs text-slate-400 mt-0.5 capitalize">{ev.type}</div>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <div className="text-sm font-semibold text-slate-700">{ev.date}</div>
+                    <div className="flex items-center gap-1 justify-end mt-0.5">
+                      <Clock className="w-3 h-3 text-slate-400" />
+                      <span className={`text-[10px] font-medium ${ev.status === 'overdue' ? 'text-red-500' : ev.status === 'upcoming' ? 'text-amber-600' : 'text-slate-400'}`}>{ev.status}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Static AI-recommended calendar */}
+          <div className="space-y-2">
+            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide">AI-Recommended Activities</div>
+            {CROP_CALENDAR.map((ev, i) => (
+              <div key={i} className="flex items-center gap-3 bg-white rounded-xl border border-slate-200 px-4 py-3">
+                <CalendarIcon type={ev.type} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-slate-800 truncate">{ev.event}</div>
+                  <div className="text-xs text-slate-400 mt-0.5 capitalize">{ev.type}</div>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <div className="text-sm font-semibold text-slate-700">{ev.date}</div>
+                  <div className="flex items-center gap-1 justify-end mt-0.5">
+                    <Clock className="w-3 h-3 text-slate-400" />
+                    <span className="text-[10px] text-slate-400">suggested</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
     </div>
