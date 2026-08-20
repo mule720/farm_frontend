@@ -5,10 +5,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   Plus, X, DollarSign, TrendingUp, TrendingDown, BarChart3,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, Pencil,
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { consume, type CostPayload, type IncomePayload } from '@/lib/bus';
+import { useOrg } from '@/store/orgStore';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type TxCategory = 'feed' | 'medicine' | 'seed' | 'fertiliser' | 'labour' | 'equipment' | 'transport' | 'utilities' | 'marketing' | 'repairs' | 'other_cost' | 'sale_income' | 'grant' | 'other_income';
@@ -43,6 +44,9 @@ function useFinance() {
   }
   function deleteTransaction(id: string) {
     setTransactions(prev => prev.filter(t => t.id !== id));
+  }
+  function updateTransaction(id: string, patch: Partial<Omit<Transaction, 'id' | 'createdAt'>>) {
+    setTransactions(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t));
   }
 
   // ─── Consume bus events ──────────────────────────────────────────────────────
@@ -97,7 +101,7 @@ function useFinance() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return { transactions, addTransaction, deleteTransaction };
+  return { transactions, addTransaction, deleteTransaction, updateTransaction };
 }
 
 // Map free-text cost category from bus payload → TxCategory enum
@@ -144,9 +148,11 @@ const catIcon  = (k: TxCategory) => ALL_CATS.find(c => c.key === k)?.icon  ?? '�
 type FTab = 'dashboard' | 'income' | 'expenses' | 'all';
 
 export default function FinanceEngine() {
-  const { transactions, addTransaction, deleteTransaction } = useFinance();
+  const { transactions, addTransaction, deleteTransaction, updateTransaction } = useFinance();
+  const { cycles } = useOrg();
   const [tab, setTab] = useState<FTab>('dashboard');
   const [showAdd, setShowAdd] = useState<TxType | null>(null);
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [periodMonths, setPeriodMonths] = useState(3);
 
   // Period filter
@@ -210,19 +216,19 @@ export default function FinanceEngine() {
         {tab === 'income' && (
           <TxList
             transactions={inPeriod.filter(t => t.type === 'income').sort((a, b) => b.date.localeCompare(a.date))}
-            onDelete={deleteTransaction}
+            onDelete={deleteTransaction} onEdit={setEditingTx}
           />
         )}
         {tab === 'expenses' && (
           <TxList
             transactions={inPeriod.filter(t => t.type === 'expense').sort((a, b) => b.date.localeCompare(a.date))}
-            onDelete={deleteTransaction}
+            onDelete={deleteTransaction} onEdit={setEditingTx}
           />
         )}
         {tab === 'all' && (
           <TxList
             transactions={[...inPeriod].sort((a, b) => b.date.localeCompare(a.date))}
-            onDelete={deleteTransaction}
+            onDelete={deleteTransaction} onEdit={setEditingTx}
           />
         )}
       </div>
@@ -230,8 +236,18 @@ export default function FinanceEngine() {
       {showAdd && (
         <AddTransactionModal
           type={showAdd}
+          cycles={cycles}
           onSave={tx => { addTransaction(tx); setShowAdd(null); }}
           onClose={() => setShowAdd(null)}
+        />
+      )}
+      {editingTx && (
+        <AddTransactionModal
+          type={editingTx.type}
+          cycles={cycles}
+          initial={editingTx}
+          onSave={tx => { updateTransaction(editingTx.id, tx); setEditingTx(null); }}
+          onClose={() => setEditingTx(null)}
         />
       )}
     </div>
@@ -360,7 +376,7 @@ function KpiCard({ label, value, icon, color }: { label: string; value: number; 
 }
 
 // ─── Transaction List ──────────────────────────────────────────────────────────
-function TxList({ transactions, onDelete }: { transactions: Transaction[]; onDelete: (id: string) => void }) {
+function TxList({ transactions, onDelete, onEdit }: { transactions: Transaction[]; onDelete: (id: string) => void; onEdit: (t: Transaction) => void }) {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   if (transactions.length === 0) {
@@ -387,10 +403,13 @@ function TxList({ transactions, onDelete }: { transactions: Transaction[]; onDel
             </button>
             {isOpen && (
               <div className="border-t border-slate-100 px-4 py-3 space-y-2">
-                {t.cycleRef  && <div className="text-xs text-slate-500">Cycle ref: {t.cycleRef}</div>}
-                {t.reference && <div className="text-xs text-slate-500">Reference: {t.reference}</div>}
+                {t.cycleRef  && <div className="text-xs text-slate-500">Cycle: {t.cycleRef}</div>}
+                {t.reference && <div className="text-xs text-slate-500">Ref #: {t.reference}</div>}
                 {t.notes     && <div className="text-xs text-slate-600">{t.notes}</div>}
-                <button onClick={() => onDelete(t.id)} className="text-xs text-red-400 hover:text-red-600 hover:underline">Delete</button>
+                <div className="flex gap-3 pt-1">
+                  <button onClick={() => onEdit(t)} className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700 hover:underline"><Pencil className="w-3 h-3" />Edit</button>
+                  <button onClick={() => onDelete(t.id)} className="text-xs text-red-400 hover:text-red-600 hover:underline">Delete</button>
+                </div>
               </div>
             )}
           </div>
@@ -401,26 +420,34 @@ function TxList({ transactions, onDelete }: { transactions: Transaction[]; onDel
 }
 
 // ─── Add Transaction Modal ────────────────────────────────────────────────────
-function AddTransactionModal({ type, onSave, onClose }: {
+function AddTransactionModal({ type, onSave, onClose, cycles = [], initial }: {
   type: TxType;
   onSave: (tx: Omit<Transaction, 'id' | 'createdAt'>) => void;
   onClose: () => void;
+  cycles?: import('@/lib/types').ProductionCycle[];
+  initial?: Transaction;
 }) {
   const cats = type === 'income' ? INCOME_CATS : EXPENSE_CATS;
   const [form, setForm] = useState<Omit<Transaction, 'id' | 'createdAt'>>({
     type,
-    category: cats[0].key,
-    description: '',
-    amount: 0,
-    date: new Date().toISOString().slice(0, 10),
+    category: initial?.category ?? cats[0].key,
+    description: initial?.description ?? '',
+    amount: initial?.amount ?? 0,
+    date: initial?.date ?? new Date().toISOString().slice(0, 10),
+    cycleRef: initial?.cycleRef,
+    reference: initial?.reference,
+    notes: initial?.notes,
   });
   function set(k: keyof typeof form, v: any) { setForm(f => ({ ...f, [k]: v })); }
+  const isEdit = !!initial;
+
+  const activeCycles = cycles.filter(c => c.status === 'active' || c.status === 'completed');
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-sm">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-          <h3 className="font-bold text-slate-900">Add {type === 'income' ? 'Income' : 'Expense'}</h3>
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-sm max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 sticky top-0 bg-white z-10">
+          <h3 className="font-bold text-slate-900">{isEdit ? 'Edit' : 'Add'} {type === 'income' ? 'Income' : 'Expense'}</h3>
           <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg"><X className="w-4 h-4" /></button>
         </div>
         <div className="p-5 space-y-3">
@@ -435,8 +462,13 @@ function AddTransactionModal({ type, onSave, onClose }: {
             <input type="number" step="any" className={INP} placeholder="0.00" value={form.amount || ''} onChange={e => set('amount', parseFloat(e.target.value) || 0)} /></div>
           <div><label className="block text-xs font-medium text-slate-600 mb-1.5">Date</label>
             <input type="date" className={INP} value={form.date} onChange={e => set('date', e.target.value)} /></div>
-          <div><label className="block text-xs font-medium text-slate-600 mb-1.5">Cycle Reference (opt.)</label>
-            <input className={INP} placeholder="e.g. Cycle 3 / Batch #2" value={form.cycleRef ?? ''} onChange={e => set('cycleRef', e.target.value || undefined)} /></div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">Production Cycle (opt.)</label>
+            <select className={INP} value={form.cycleRef ?? ''} onChange={e => set('cycleRef', e.target.value || undefined)}>
+              <option value="">— None —</option>
+              {activeCycles.map(c => <option key={c.id} value={c.id}>{c.name} ({c.status})</option>)}
+            </select>
+          </div>
           <div><label className="block text-xs font-medium text-slate-600 mb-1.5">Reference # (opt.)</label>
             <input className={INP} placeholder="Receipt / Invoice #" value={form.reference ?? ''} onChange={e => set('reference', e.target.value || undefined)} /></div>
           <div><label className="block text-xs font-medium text-slate-600 mb-1.5">Notes</label>
@@ -446,7 +478,7 @@ function AddTransactionModal({ type, onSave, onClose }: {
           <button onClick={onClose} className="flex-1 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-600">Cancel</button>
           <button onClick={() => onSave(form)} disabled={!form.description.trim() || form.amount <= 0}
             className={`flex-1 py-2.5 text-white rounded-xl text-sm font-medium disabled:opacity-50 ${type === 'income' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}>
-            Save
+            {isEdit ? 'Save Changes' : 'Save'}
           </button>
         </div>
       </div>

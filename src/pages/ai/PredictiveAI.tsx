@@ -19,39 +19,18 @@ interface Prediction {
   daysOut: number;
 }
 
-const DISEASE_ALERTS: Prediction[] = [
-  { id: '1', type: 'disease', title: 'Newcastle Disease Risk — Poultry', risk: 'high', confidence: 87, value: '87% probability in 5 days', detail: 'Humidity 89% + temperature drop + flock age 21 days match outbreak pattern from 2024 cluster.', action: 'Administer ND vaccine booster today. Increase ventilation.', daysOut: 5 },
-  { id: '2', type: 'disease', title: 'Late Blight — Tomato Tunnel 1', risk: 'medium', confidence: 64, value: '64% risk in 7 days', detail: 'Extended leaf wetness period >8h detected. VPD 0.6 kPa below threshold.', action: 'Apply preventive fungicide (Mancozeb). Reduce humidity below 80%.', daysOut: 7 },
-  { id: '3', type: 'disease', title: 'ASF Biosecurity Alert', risk: 'low', confidence: 22, value: 'Low — regional monitoring', detail: 'ASF confirmed in Lusaka province. No on-farm indicators detected.', action: 'Maintain strict vehicle and visitor biosecurity protocols.', daysOut: 30 },
+// Static disease alerts — generic enough to apply to any farm
+const STATIC_DISEASE_ALERTS: Prediction[] = [
+  { id: 'gen-1', type: 'disease', title: 'Biosecurity — General Advisory', risk: 'low', confidence: 30, value: 'Low general risk', detail: 'No farm-specific outbreak data available. Follow standard biosecurity protocols at all entry points.', action: 'Disinfect vehicle wheels and footbaths daily. Restrict visitor access to production areas.', daysOut: 30 },
+  { id: 'gen-2', type: 'disease', title: 'Seasonal Disease Watch', risk: 'medium', confidence: 55, value: 'Elevated seasonal risk', detail: 'Seasonal weather patterns can increase respiratory disease risk in poultry and livestock, and fungal disease risk in crops.', action: 'Ensure adequate ventilation in animal houses. Scout crops for early disease signs.', daysOut: 14 },
 ];
 
-const YIELD_FORECASTS = [
-  { crop: 'Broiler Flock A', metric: 'Avg Live Weight', forecast: '2.45 kg', actual: '2.38 kg', diff: '+3%', color: 'green', icon: Bird },
-  { crop: 'Tomatoes — T1', metric: 'Yield this week', forecast: '1,240 kg', actual: '—', diff: 'Forecast', color: 'blue', icon: Leaf },
-  { crop: 'Maize — Field A', metric: 'Harvest yield', forecast: '4.8 t/ha', actual: '—', diff: 'Forecast', color: 'amber', icon: Sprout },
-  { crop: 'Lettuce — NFT', metric: 'Ready to harvest', forecast: '320 heads', actual: '—', diff: '5 days', color: 'green', icon: Leaf },
-];
-
-const FCR_DATA = [
-  { flock: 'Broiler A (Day 28)', fcr: 1.72, target: 1.65, status: 'above', feed_kg: 3420, weight_gain_kg: 1988 },
-  { flock: 'Broiler B (Day 14)', fcr: 1.51, target: 1.55, status: 'good', feed_kg: 1240, weight_gain_kg: 821 },
-  { flock: 'Layer Flock (Wk 32)', fcr: 2.1, target: 2.0, status: 'above', feed_kg: 8400, weight_gain_kg: 4000 },
-];
-
+// Market demand — static reference prices (update as needed)
 const MARKET_DEMAND = [
   { commodity: 'Live Broiler (2.0–2.2 kg)', demand: 'very_high', price_zmw: 62, trend: 'up', note: 'Pre-season demand spike. Sell this week.' },
   { commodity: 'Tomato (Grade A)', demand: 'high', price_zmw: 8.50, trend: 'up', note: 'Rains ended — market supply down 30%.' },
   { commodity: 'Lettuce (Head)', demand: 'medium', price_zmw: 14, trend: 'flat', note: 'Steady hotel/restaurant demand.' },
-  { commodity: 'Maize (bulk, shelled)', demand: 'low', price_zmw: 3.20, trend: 'down', note: 'FISP glut — hold until July.' },
-];
-
-const CROP_CALENDAR = [
-  { date: 'Jun 10', event: 'Transplant tomato seedlings — Tunnel 2', type: 'planting', status: 'upcoming' },
-  { date: 'Jun 12', event: 'Apply NPK top-dressing — Maize Field A', type: 'inputs', status: 'upcoming' },
-  { date: 'Jun 15', event: 'Broiler Flock A — expected slaughter weight', type: 'harvest', status: 'upcoming' },
-  { date: 'Jun 18', event: 'Lettuce harvest — NFT Bay (325 heads)', type: 'harvest', status: 'upcoming' },
-  { date: 'Jun 22', event: 'Fumigation — empty broiler house', type: 'biosecurity', status: 'upcoming' },
-  { date: 'Jun 28', event: 'Payroll processing deadline', type: 'admin', status: 'upcoming' },
+  { commodity: 'Maize (bulk, shelled)', demand: 'low', price_zmw: 3.20, trend: 'down', note: 'FISP glut — consider holding stock.' },
 ];
 
 function RiskBadge({ risk }: { risk: 'high' | 'medium' | 'low' }) {
@@ -79,6 +58,79 @@ function CalendarIcon({ type }: { type: string }) {
 export default function PredictiveAIModule() {
   const { org, cycles } = useOrg();
   const [tab, setTab] = useState<'disease' | 'yield' | 'fcr' | 'market' | 'calendar'>('disease');
+
+  const activeCycles = useMemo(() => cycles.filter(c => c.status === 'active'), [cycles]);
+
+  // Build disease alerts from real active cycles
+  const diseaseAlerts = useMemo<Prediction[]>(() => {
+    if (!org || activeCycles.length === 0) return STATIC_DISEASE_ALERTS;
+    const alerts: Prediction[] = [...STATIC_DISEASE_ALERTS];
+    activeCycles.forEach((c, i) => {
+      const ent = org.enterprises.find(e => e.id === c.enterpriseId);
+      const tpl = ent ? getTemplate(ent.templateId) : null;
+      const cat = tpl?.category ?? 'crops';
+      const ageDays = c.startDate ? Math.floor((Date.now() - new Date(c.startDate).getTime()) / 86400000) : 0;
+      const entName = ent?.name ?? c.name;
+      // Poultry cycles older than 14 days → ND risk alert
+      if (cat === 'poultry' && ageDays > 14) {
+        alerts.push({ id: `cycle-nd-${c.id}`, type: 'disease', title: `Newcastle Disease Watch — ${entName}`, risk: ageDays > 28 ? 'medium' : 'low', confidence: Math.min(40 + ageDays, 70), value: `Flock age ${ageDays} days — monitor closely`, detail: `Flock has passed the most vulnerable ND window. Confirm vaccination records are up to date.`, action: 'Check vaccination log. Boost ventilation if humidity > 80%.', daysOut: 7 });
+      }
+      // Aquaculture — flag low oxygen risk
+      if (cat === 'aquaculture') {
+        alerts.push({ id: `cycle-do-${c.id}`, type: 'disease', title: `Low DO Alert — ${entName}`, risk: 'medium', confidence: 60, value: 'Monitor dissolved oxygen daily', detail: 'Aquaculture cycles are vulnerable to oxygen depletion especially during warm weather and high biomass density.', action: 'Check aerators. Feed in the morning when DO is highest.', daysOut: 3 });
+      }
+    });
+    return alerts;
+  }, [org, activeCycles]);
+
+  // Build yield forecast from real cycles
+  const yieldForecasts = useMemo(() => {
+    if (!org || activeCycles.length === 0) return [];
+    return activeCycles.map(c => {
+      const ent = org.enterprises.find(e => e.id === c.enterpriseId);
+      const tpl = ent ? getTemplate(ent.templateId) : null;
+      const cat = tpl?.category ?? 'crops';
+      const ageDays = c.startDate ? Math.floor((Date.now() - new Date(c.startDate).getTime()) / 86400000) : 0;
+      const stage = c.stages.find(s => s.id === c.currentStageId);
+      const unitQty = (c.productionUnits ?? []).reduce((s, u) => s + (u.quantity ?? 0), 0);
+      const daysLeft = stage?.targetEndDate ? Math.max(0, Math.ceil((new Date(stage.targetEndDate).getTime() - Date.now()) / 86400000)) : null;
+      const icons: Record<string, React.ElementType> = { poultry: Bird, livestock: Leaf, aquaculture: Activity, crops: Sprout, horticulture: Leaf };
+      const Icon = icons[cat] ?? Leaf;
+      return {
+        crop: ent?.name ?? c.name,
+        metric: stage?.name ?? 'Active Stage',
+        forecast: unitQty > 0 ? `${unitQty.toLocaleString()} units stocked` : '—',
+        actual: `Day ${ageDays}`,
+        diff: daysLeft !== null ? `${daysLeft}d left` : 'In progress',
+        color: 'blue',
+        icon: Icon,
+      };
+    });
+  }, [org, activeCycles]);
+
+  // Build FCR data from real cycles (poultry only; show '—' for unmeasured)
+  const fcrData = useMemo(() => {
+    const poultry = activeCycles.filter(c => {
+      const ent = org?.enterprises.find(e => e.id === c.enterpriseId);
+      const tpl = ent ? getTemplate(ent.templateId) : null;
+      return tpl?.category === 'poultry';
+    });
+    if (poultry.length === 0) return [];
+    return poultry.map(c => {
+      const ent = org?.enterprises.find(e => e.id === c.enterpriseId);
+      const ageDays = c.startDate ? Math.floor((Date.now() - new Date(c.startDate).getTime()) / 86400000) : 0;
+      const units = (c.productionUnits ?? []).reduce((s, u) => s + (u.quantity ?? 0), 0);
+      return {
+        flock: `${ent?.name ?? c.name} (Day ${ageDays})`,
+        fcr: null as number | null,   // null = not measured yet
+        target: 1.65,
+        status: 'unknown',
+        feed_kg: null as number | null,
+        weight_gain_kg: null as number | null,
+        units,
+      };
+    });
+  }, [org, activeCycles]);
 
   // Build real calendar events from active cycle stages
   const realCalendar = useMemo(() => {
@@ -125,12 +177,12 @@ export default function PredictiveAIModule() {
       </div>
 
       {/* Alert banner */}
-      {DISEASE_ALERTS.filter(a => a.risk === 'high').length > 0 && (
+      {diseaseAlerts.filter(a => a.risk === 'high').length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
           <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
           <div>
             <div className="font-semibold text-red-800">High-Priority Disease Alert</div>
-            <div className="text-sm text-red-700 mt-0.5">{DISEASE_ALERTS.find(a => a.risk === 'high')?.title} — {DISEASE_ALERTS.find(a => a.risk === 'high')?.action}</div>
+            <div className="text-sm text-red-700 mt-0.5">{diseaseAlerts.find(a => a.risk === 'high')?.title} — {diseaseAlerts.find(a => a.risk === 'high')?.action}</div>
           </div>
         </div>
       )}
@@ -153,7 +205,7 @@ export default function PredictiveAIModule() {
       {tab === 'disease' && (
         <div className="space-y-4">
           <div className="text-sm text-slate-500">AI disease risk model — trained on local outbreak history, weather data, flock age, and management patterns</div>
-          {DISEASE_ALERTS.map(alert => (
+          {diseaseAlerts.map(alert => (
             <div key={alert.id} className={`bg-white rounded-xl border p-5 ${alert.risk === 'high' ? 'border-red-200' : alert.risk === 'medium' ? 'border-amber-200' : 'border-slate-200'}`}>
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">
@@ -192,8 +244,11 @@ export default function PredictiveAIModule() {
       {tab === 'yield' && (
         <div className="space-y-4">
           <div className="text-sm text-slate-500">Forecasts based on current growth trajectory, feed intake, climate data, and historical performance</div>
+          {yieldForecasts.length === 0 && (
+            <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-400 text-sm">No active production cycles. Start a cycle to see yield forecasts.</div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {YIELD_FORECASTS.map(item => {
+            {yieldForecasts.map(item => {
               const Icon = item.icon;
               return (
                 <div key={item.crop} className="bg-white rounded-xl border border-slate-200 p-5">
@@ -221,37 +276,34 @@ export default function PredictiveAIModule() {
       {tab === 'fcr' && (
         <div className="space-y-4">
           <div className="text-sm text-slate-500">Feed Conversion Ratio (FCR) = Total feed consumed ÷ Total live weight gain. Lower is better.</div>
-          {FCR_DATA.map(item => (
-            <div key={item.flock} className={`bg-white rounded-xl border p-5 ${item.status === 'above' ? 'border-amber-200' : 'border-green-200'}`}>
+          {fcrData.length === 0 && (
+            <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-400 text-sm">No active poultry cycles. FCR tracking requires an active poultry enterprise.</div>
+          )}
+          {fcrData.map(item => (
+            <div key={item.flock} className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-center justify-between mb-3">
                 <div className="font-semibold text-slate-800">{item.flock}</div>
-                <div className={`text-lg font-bold ${item.status === 'above' ? 'text-amber-700' : 'text-green-700'}`}>
-                  FCR {item.fcr}
+                <div className="text-sm font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded">
+                  {item.units.toLocaleString()} birds
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-3 mb-3">
                 <div className="bg-slate-50 rounded-lg p-2.5 text-center">
-                  <div className="text-sm font-bold text-slate-700">{item.fcr}</div>
+                  <div className="text-sm font-bold text-slate-400">—</div>
                   <div className="text-xs text-slate-400">Actual FCR</div>
                 </div>
                 <div className="bg-slate-50 rounded-lg p-2.5 text-center">
                   <div className="text-sm font-bold text-slate-700">{item.target}</div>
                   <div className="text-xs text-slate-400">Target FCR</div>
                 </div>
-                <div className={`rounded-lg p-2.5 text-center ${item.status === 'above' ? 'bg-amber-50' : 'bg-green-50'}`}>
-                  <div className={`text-sm font-bold ${item.status === 'above' ? 'text-amber-700' : 'text-green-700'}`}>{item.status === 'above' ? '+' + ((item.fcr - item.target) * 100).toFixed(0) + 'g/kg waste' : 'On target'}</div>
+                <div className="bg-blue-50 rounded-lg p-2.5 text-center">
+                  <div className="text-sm font-bold text-blue-600">Pending</div>
                   <div className="text-xs text-slate-400">vs Target</div>
                 </div>
               </div>
-              <div className="flex justify-between text-xs text-slate-500">
-                <span>Feed consumed: {item.feed_kg.toLocaleString()} kg</span>
-                <span>Weight gain: {item.weight_gain_kg.toLocaleString()} kg</span>
+              <div className="bg-blue-50 rounded-lg px-3 py-2 text-xs text-blue-800">
+                FCR not yet measured — record feed and weight data in inventory to enable AI FCR tracking.
               </div>
-              {item.status === 'above' && (
-                <div className="mt-3 bg-amber-50 rounded-lg px-3 py-2 text-xs text-amber-800">
-                  AI suggests: Review feed pellet quality, reduce heat stress, check feeder adjustment to minimize wastage.
-                </div>
-              )}
             </div>
           ))}
         </div>
@@ -308,26 +360,41 @@ export default function PredictiveAIModule() {
             </div>
           )}
 
-          {/* Static AI-recommended calendar */}
-          <div className="space-y-2">
-            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide">AI-Recommended Activities</div>
-            {CROP_CALENDAR.map((ev, i) => (
-              <div key={i} className="flex items-center gap-3 bg-white rounded-xl border border-slate-200 px-4 py-3">
-                <CalendarIcon type={ev.type} />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-slate-800 truncate">{ev.event}</div>
-                  <div className="text-xs text-slate-400 mt-0.5 capitalize">{ev.type}</div>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <div className="text-sm font-semibold text-slate-700">{ev.date}</div>
-                  <div className="flex items-center gap-1 justify-end mt-0.5">
-                    <Clock className="w-3 h-3 text-slate-400" />
-                    <span className="text-[10px] text-slate-400">suggested</span>
+          {/* AI-recommended activities — generic best practices */}
+          {(() => {
+            const today = new Date();
+            const fmt = (d: Date) => d.toISOString().slice(0, 10);
+            const add = (days: number) => { const d = new Date(today); d.setDate(today.getDate() + days); return fmt(d); };
+            const aiActivities = [
+              { date: add(3),  event: 'Inspect all water lines and drinkers for blockages', type: 'inputs' },
+              { date: add(7),  event: 'Biosecurity walk-through — log visitor entries', type: 'biosecurity' },
+              { date: add(10), event: 'Review feed stock levels against expected consumption', type: 'inputs' },
+              { date: add(14), event: 'Check growth performance against breed standard', type: 'planting' },
+              { date: add(21), event: 'Soil/water quality sampling (if applicable)', type: 'inputs' },
+              { date: add(30), event: 'Mid-cycle financial reconciliation', type: 'admin' },
+            ];
+            return (
+              <div className="space-y-2">
+                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide">AI-Recommended Activities</div>
+                {aiActivities.map((ev, i) => (
+                  <div key={i} className="flex items-center gap-3 bg-white rounded-xl border border-slate-200 px-4 py-3">
+                    <CalendarIcon type={ev.type} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-slate-800 truncate">{ev.event}</div>
+                      <div className="text-xs text-slate-400 mt-0.5 capitalize">{ev.type}</div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div className="text-sm font-semibold text-slate-700">{ev.date}</div>
+                      <div className="flex items-center gap-1 justify-end mt-0.5">
+                        <Clock className="w-3 h-3 text-slate-400" />
+                        <span className="text-[10px] text-slate-400">suggested</span>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                ))}
               </div>
-            ))}
-          </div>
+            );
+          })()}
         </div>
       )}
     </div>
