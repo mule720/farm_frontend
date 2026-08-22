@@ -3,7 +3,7 @@
 // Reads real production cycles + derives feeding/water/health recommendations
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useMemo } from 'react';
-import { Brain, Wheat, Droplet, TrendingUp, AlertTriangle, Sparkles, Zap } from 'lucide-react';
+import { Brain, Wheat, Droplet, TrendingUp, AlertTriangle, Sparkles, Zap, RefreshCw } from 'lucide-react';
 import { useOrg } from '@/store/orgStore';
 import { getTemplate } from '@/lib/templates';
 
@@ -23,20 +23,137 @@ function getNorm(cat: string) {
   return FEEDING_NORMS[cat] ?? FEEDING_NORMS.crops;
 }
 
-// ─── Generic AI insights based on cycle state ─────────────────────────────────
-const STATIC_INSIGHTS = [
-  { icon: AlertTriangle, color: 'text-red-500', bg: 'bg-red-50', title: 'Disease Risk Monitoring', body: 'Check water intake daily — a 20%+ drop is an early warning. Inspect any batch showing lethargy or reduced feed uptake.' },
-  { icon: TrendingUp, color: 'text-green-600', bg: 'bg-green-50', title: 'Growth Tracking', body: 'Weigh a 2% sample every 7 days. Compare actual vs target weight. Adjust feed quantity and quality if lagging.' },
-  { icon: Zap, color: 'text-amber-600', bg: 'bg-amber-50', title: 'Feed Stage Transitions', body: 'Review stage templates in your production cycles. Order next-stage feed 5 days before the transition date.' },
-  { icon: Sparkles, color: 'text-blue-600', bg: 'bg-blue-50', title: 'Market Timing', body: 'List produce on AgriFood Market 7–10 days before harvest. Early listing attracts more buyers and better prices.' },
-  { icon: AlertTriangle, color: 'text-amber-600', bg: 'bg-amber-50', title: 'Feed Cost Management', body: 'Track feed cost as % of total production cost. Industry target is 60–70% for poultry, 55–65% for aquaculture.' },
-  { icon: TrendingUp, color: 'text-purple-600', bg: 'bg-purple-50', title: 'Record Keeping Reminder', body: 'Daily records in the Production Engine unlock AI recommendations and help you compare cycles over time.' },
-];
+// ─── Live insights from localStorage ─────────────────────────────────────────
+interface Insight {
+  icon: React.ComponentType<{ className?: string }>;
+  color: string;
+  bg: string;
+  title: string;
+  body: string;
+  severity: 'info' | 'warning' | 'critical';
+}
+
+function generateInsights(): Insight[] {
+  const insights: Insight[] = [];
+
+  // 1. Aquaculture — low DO + aerator off
+  try {
+    const ponds: any[] = JSON.parse(localStorage.getItem('agronexus_v2_aqua_ponds') ?? '[]');
+    ponds.forEach(p => {
+      if ((p.do_mgl ?? 99) < 5 && p.aeratorOn === false) {
+        insights.push({
+          icon: AlertTriangle, severity: 'critical',
+          color: 'text-red-600', bg: 'bg-red-50',
+          title: `Low DO in ${p.name ?? 'pond'} — aerator off`,
+          body: `Dissolved oxygen is ${p.do_mgl} mg/L, which is below the 5 mg/L threshold. Turn on the aerator immediately to prevent fish stress or mortality.`,
+        });
+      }
+    });
+  } catch {}
+
+  // 2. Poultry — temperature outside 18–30°C
+  try {
+    const houses: any[] = JSON.parse(localStorage.getItem('agronexus_v2_ph_houses') ?? '[]');
+    houses.forEach(h => {
+      const t = h.temp ?? h.temperature;
+      if (t !== undefined && (t < 18 || t > 30)) {
+        insights.push({
+          icon: AlertTriangle, severity: 'warning',
+          color: 'text-amber-600', bg: 'bg-amber-50',
+          title: `Temperature alert in ${h.name ?? 'house'}`,
+          body: `Current temperature is ${t}°C, outside the optimal 18–30°C range. Adjust ventilation or heating to prevent performance loss.`,
+        });
+      }
+    });
+  } catch {}
+
+  // 3. Inventory below reorder point
+  try {
+    const items: any[] = JSON.parse(localStorage.getItem('agronexus_v2_inventory_items') ?? '[]');
+    const low = items.filter(i => (i.currentQty ?? i.quantity ?? 0) <= (i.minStockLevel ?? i.reorderPoint ?? 0));
+    if (low.length > 0) {
+      insights.push({
+        icon: Zap, severity: 'warning',
+        color: 'text-amber-600', bg: 'bg-amber-50',
+        title: `${low.length} inventory item${low.length > 1 ? 's' : ''} below reorder point`,
+        body: `Items: ${low.slice(0, 3).map((i: any) => i.name ?? i.itemName ?? 'Unknown').join(', ')}${low.length > 3 ? ` +${low.length - 3} more` : ''}. Restock to avoid disruptions.`,
+      });
+    }
+  } catch {}
+
+  // 4. Finance — this month P&L
+  try {
+    const txs: any[] = JSON.parse(localStorage.getItem('agronexus_v2_transactions') ?? '[]');
+    const now = new Date();
+    const monthTxs = txs.filter(t => {
+      const d = new Date(t.date ?? t.createdAt ?? '');
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    });
+    const income  = monthTxs.filter(t => t.type === 'income').reduce((s: number, t: any) => s + (t.amount ?? 0), 0);
+    const expense = monthTxs.filter(t => t.type === 'expense').reduce((s: number, t: any) => s + (t.amount ?? 0), 0);
+    const net = income - expense;
+    if (monthTxs.length > 0) {
+      insights.push({
+        icon: TrendingUp, severity: 'info',
+        color: net >= 0 ? 'text-green-600' : 'text-red-600',
+        bg: net >= 0 ? 'bg-green-50' : 'bg-red-50',
+        title: `This month: ZMW ${income.toLocaleString()} income, ZMW ${expense.toLocaleString()} expenses`,
+        body: `Net ${net >= 0 ? 'profit' : 'loss'}: ZMW ${Math.abs(net).toLocaleString()} for ${now.toLocaleString('default', { month: 'long', year: 'numeric' })}.`,
+      });
+    }
+  } catch {}
+
+  // 5. Energy — battery critically low
+  try {
+    const batteries: any[] = JSON.parse(localStorage.getItem('agronexus_v2_em_battery') ?? '[]');
+    batteries.forEach(b => {
+      const soc = b.soc ?? b.stateOfCharge ?? b.chargeLevel;
+      if (soc !== undefined && soc < 20) {
+        insights.push({
+          icon: Zap, severity: 'critical',
+          color: 'text-red-600', bg: 'bg-red-50',
+          title: `${b.name ?? 'Battery'} critically low at ${soc}%`,
+          body: `Battery state of charge is ${soc}%. Charge immediately or switch to grid power to avoid system outages.`,
+        });
+      }
+    });
+  } catch {}
+
+  // 6. Soil — critical zones
+  try {
+    const zones: any[] = JSON.parse(localStorage.getItem('agronexus_v2_sd_zones') ?? '[]');
+    zones.filter(z => z.status === 'critical').forEach(z => {
+      insights.push({
+        icon: AlertTriangle, severity: 'critical',
+        color: 'text-red-600', bg: 'bg-red-50',
+        title: `Soil moisture critical in ${z.name ?? 'zone'}`,
+        body: `Zone ${z.name ?? ''} is reporting critical soil moisture. Irrigate immediately to prevent crop stress and yield loss.`,
+      });
+    });
+  } catch {}
+
+  // 7. Filler if fewer than 3
+  if (insights.length < 3) {
+    insights.push({
+      icon: Sparkles, severity: 'info',
+      color: 'text-blue-600', bg: 'bg-blue-50',
+      title: 'All systems normal — no issues detected',
+      body: 'Your farm sensors and modules are reporting normal readings. Keep recording daily data to improve AI recommendations.',
+    });
+  }
+
+  return insights.slice(0, 6);
+}
 
 export default function SmartEngine() {
   const { org, cycles } = useOrg();
+  const [refreshKey, setRefreshKey] = React.useState(0);
 
   const activeCycles = useMemo(() => cycles.filter(c => c.status === 'active'), [cycles]);
+
+  // Computed insights from live localStorage data
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const insights = useMemo(() => generateInsights(), [refreshKey]);
 
   // Build today's feeding plan from real cycles
   const todayPlan = useMemo(() => {
@@ -103,7 +220,7 @@ export default function SmartEngine() {
           </div>
           <div className="bg-white/10 backdrop-blur rounded-lg p-3">
             <div className="text-xs text-blue-100">AI Insights</div>
-            <div className="text-2xl font-bold">{STATIC_INSIGHTS.length}</div>
+            <div className="text-2xl font-bold">{insights.length}</div>
           </div>
           <div className="bg-white/10 backdrop-blur rounded-lg p-3">
             <div className="text-xs text-blue-100">Active Cycles</div>
@@ -114,18 +231,31 @@ export default function SmartEngine() {
 
       {/* AI Insights */}
       <div>
-        <h2 className="text-lg font-bold text-slate-900 mb-4">AI-Generated Insights</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-slate-900">AI-Generated Insights</h2>
+          <button onClick={() => setRefreshKey(k => k + 1)}
+            className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50 transition-colors">
+            <RefreshCw className="w-3.5 h-3.5" /> Refresh
+          </button>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {STATIC_INSIGHTS.map((insight, i) => {
+          {insights.map((insight, i) => {
             const Icon = insight.icon;
             return (
-              <div key={i} className="bg-white border border-slate-200 rounded-xl p-5">
+              <div key={i} className={`bg-white border rounded-xl p-5 ${insight.severity === 'critical' ? 'border-red-200' : insight.severity === 'warning' ? 'border-amber-200' : 'border-slate-200'}`}>
                 <div className="flex items-start gap-3">
                   <div className={`w-10 h-10 rounded-lg ${insight.bg} flex items-center justify-center flex-shrink-0`}>
                     <Icon className={`w-5 h-5 ${insight.color}`} />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-slate-900 mb-1">{insight.title}</h3>
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="font-semibold text-slate-900">{insight.title}</h3>
+                      {insight.severity !== 'info' && (
+                        <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${insight.severity === 'critical' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                          {insight.severity}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-sm text-slate-600">{insight.body}</p>
                   </div>
                 </div>

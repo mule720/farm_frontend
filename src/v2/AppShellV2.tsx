@@ -37,6 +37,11 @@ import AnimalHealth from '@/pages/health/AnimalHealth';
 import StaffLabour from '@/pages/hr/StaffLabour';
 import Procurement from '@/pages/procurement/Procurement';
 import BackupRestore from '@/pages/settings/BackupRestore';
+import DeviceGateway from '@/pages/iot/DeviceGateway';
+import ColdChain from '@/pages/iot/ColdChain';
+import FarmGateway from '@/pages/iot/FarmGateway';
+import ActivityLog from '@/pages/reports/ActivityLog';
+import CropRotation from '@/pages/production/CropRotation';
 
 type Page = 'dashboard' | 'production' | 'inventory' | 'sales' | 'marketplace-food'
            | 'marketplace-supply' | 'marketplace-services' | 'finance' | 'reports'
@@ -45,7 +50,9 @@ type Page = 'dashboard' | 'production' | 'inventory' | 'sales' | 'marketplace-fo
            | 'ai-weather' | 'ai-sustainability' | 'ai-devices' | 'iot-water'
            | 'iot-aquaculture' | 'iot-poultry'
            | 'iot-energy' | 'iot-soil' | 'iot-automation'
-           | 'notifications' | 'animal-health' | 'staff-labour' | 'procurement' | 'backup';
+           | 'notifications' | 'animal-health' | 'staff-labour' | 'procurement' | 'backup'
+           | 'iot-gateway' | 'iot-cold-chain' | 'iot-farm-gateway'
+           | 'activity-log' | 'crop-rotation';
 
 interface NavItem {
   id: Page;
@@ -79,10 +86,15 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'iot-energy',       label: 'Energy',         icon: <Zap className="w-4 h-4" />,        section: 'ai' },
   { id: 'iot-soil',         label: 'Soil Depth',     icon: <Activity className="w-4 h-4" />,   section: 'ai' },
   { id: 'iot-automation',   label: 'Automation',     icon: <Zap className="w-4 h-4" />,        section: 'ai' },
+  { id: 'iot-gateway',     label: 'Device Gateway', icon: <Radio className="w-4 h-4" />,      section: 'ai' },
+  { id: 'iot-cold-chain',  label: 'Cold Chain',     icon: <Activity className="w-4 h-4" />,   section: 'ai' },
+  { id: 'iot-farm-gateway',label: 'Farm Gateway',   icon: <Radio className="w-4 h-4" />,      section: 'ai' },
   { id: 'notifications',  label: 'Notifications',  icon: <Bell className="w-4 h-4" />,       section: 'ops' },
   { id: 'animal-health',  label: 'Animal Health',  icon: <Activity className="w-4 h-4" />,   section: 'ops' },
   { id: 'staff-labour',   label: 'Staff & Labour', icon: <Check className="w-4 h-4" />,      section: 'ops' },
   { id: 'procurement',    label: 'Procurement',    icon: <Truck className="w-4 h-4" />,      section: 'ops' },
+  { id: 'activity-log',  label: 'Activity Log',   icon: <Clock className="w-4 h-4" />,      section: 'ops' },
+  { id: 'crop-rotation', label: 'Crop Rotation',  icon: <Sprout className="w-4 h-4" />,     section: 'ops' },
   { id: 'config',        label: 'Settings',       icon: <Settings className="w-4 h-4" />,   section: 'bottom' },
   { id: 'backup',        label: 'Backup & Restore', icon: <Search className="w-4 h-4" />,   section: 'bottom' },
 ];
@@ -178,6 +190,16 @@ export default function AppShellV2() {
         return <Procurement />;
       case 'backup':
         return <BackupRestore />;
+      case 'iot-gateway':
+        return <DeviceGateway />;
+      case 'iot-cold-chain':
+        return <ColdChain />;
+      case 'iot-farm-gateway':
+        return <FarmGateway />;
+      case 'activity-log':
+        return <ActivityLog />;
+      case 'crop-rotation':
+        return <CropRotation />;
       case 'marketplace-food':
         return <AgriFood />;
       case 'marketplace-supply':

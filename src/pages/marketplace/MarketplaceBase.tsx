@@ -233,18 +233,36 @@ function ListingDetail({ listing, accent, onClose, onUpdate, onDelete }: {
         </div>
         {/* Actions */}
         {listing.mine && !editMode && (
-          <div className="flex gap-2 mt-3">
-            <button onClick={() => setEditMode(true)} className="px-3 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-medium hover:bg-slate-200">Edit</button>
-            <button onClick={() => onUpdate({ status: listing.status === 'active' ? 'inactive' : 'active' })}
-              className="px-3 py-2 bg-amber-100 text-amber-700 rounded-xl text-xs font-medium hover:bg-amber-200">
-              {listing.status === 'active' ? 'Deactivate' : 'Reactivate'}
-            </button>
+          <div className="flex flex-wrap gap-2 mt-3">
+            {listing.status !== 'sold' && (
+              <button onClick={() => setEditMode(true)} className="px-3 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-medium hover:bg-slate-200">Edit</button>
+            )}
+            {listing.status === 'active' && (
+              <button onClick={() => onUpdate({ status: 'sold' })}
+                className="px-3 py-2 bg-green-600 text-white rounded-xl text-xs font-medium hover:bg-green-700">
+                ✓ Mark as Sold
+              </button>
+            )}
+            {listing.status === 'sold' && (
+              <span className="px-3 py-2 bg-green-100 text-green-700 rounded-xl text-xs font-medium">✓ Sold</span>
+            )}
+            {listing.status !== 'sold' && (
+              <button onClick={() => onUpdate({ status: listing.status === 'active' ? 'inactive' : 'active' })}
+                className="px-3 py-2 bg-amber-100 text-amber-700 rounded-xl text-xs font-medium hover:bg-amber-200">
+                {listing.status === 'active' ? 'Deactivate' : 'Reactivate'}
+              </button>
+            )}
             {confirmDel ? (
               <><button onClick={onDelete} className="px-3 py-2 bg-red-600 text-white rounded-xl text-xs font-medium">Confirm Delete</button>
               <button onClick={() => setConfirmDel(false)} className="px-3 py-2 border border-slate-200 text-slate-500 rounded-xl text-xs">Cancel</button></>
             ) : (
               <button onClick={() => setConfirmDel(true)} className="px-3 py-2 border border-red-200 text-red-500 rounded-xl text-xs hover:bg-red-50">Delete</button>
             )}
+          </div>
+        )}
+        {listing.status === 'sold' && listing.mine && (
+          <div className="mt-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+            This listing is marked as sold and hidden from the public browse feed.
           </div>
         )}
       </div>
