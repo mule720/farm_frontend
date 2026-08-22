@@ -1,7 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// AgroNexus v2 — Reports Engine  (7-tab MIS suite)
+// AgroNexus v2 — Reports Engine  (6-tab MIS suite)
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useState, useMemo } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import {
   BarChart3, TrendingUp, TrendingDown, Activity, Package, DollarSign,
   Download, Users, Truck, Leaf, RefreshCw, Filter, ChevronDown, ChevronUp,
@@ -12,18 +13,43 @@ import { getTemplate } from '@/lib/templates';
 import { exportCSV, backupAll } from '@/lib/exportUtils';
 
 // ─── Tab definition ──────────────────────────────────────────────────────────
-const TABS = ['overview', 'finance', 'production', 'inventory', 'staff', 'procurement', 'export'] as const;
+const TABS = ['overview', 'finance', 'production', 'inventory', 'procurement', 'export'] as const;
 type Tab = typeof TABS[number];
 
 const TAB_LABELS: Record<Tab, string> = {
   overview: 'Overview',
-  finance: 'Finance',
+  finance: 'Profitability',
   production: 'Production',
   inventory: 'Inventory',
-  staff: 'Staff & Labour',
   procurement: 'Procurement',
   export: 'Export',
 };
+
+// ─── Production Expense LS key & types ───────────────────────────────────────
+const PROD_EXP_KEY = 'agronexus_v2_prod_expenses';
+
+interface ProdExpense {
+  id: string;
+  type: 'feed' | 'vet' | 'chicks' | 'seeds' | 'fingerlings' | 'other';
+  description: string;
+  amount: number;
+  date: string;
+  cycleId: string;
+  enterpriseId: string;
+  batchId?: string;
+}
+
+function seedProdExpenses(cycles: any[], enterprises: any[]): ProdExpense[] {
+  const c0 = cycles[0]; const e0 = enterprises[0];
+  if (!c0 || !e0) return [];
+  const today = new Date().toISOString().slice(0, 10);
+  return [
+    { id: 'pe-1', type: 'feed',   description: 'Broiler starter 25kg × 80 bags', amount: 12000, date: today, cycleId: c0.id, enterpriseId: e0.id },
+    { id: 'pe-2', type: 'chicks', description: 'Day-old chicks 3000 @ ZMW 8',    amount: 24000, date: today, cycleId: c0.id, enterpriseId: e0.id },
+    { id: 'pe-3', type: 'vet',    description: 'Newcastle vaccine + Gumboro',     amount: 1850,  date: today, cycleId: c0.id, enterpriseId: e0.id },
+    { id: 'pe-4', type: 'other',  description: 'Litter (wood shavings)',           amount: 2200,  date: today, cycleId: c0.id, enterpriseId: e0.id },
+  ];
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function fmt(n: number, currency: string): string {
@@ -217,6 +243,31 @@ export default function ReportsEngine() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [expandedPO, setExpandedPO] = useState<string | null>(null);
+
+  // ── Production expense state ──────────────────────────────────────────────
+  const [prodExpState, setProdExpState] = useState<ProdExpense[]>(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(PROD_EXP_KEY) ?? '[]') as ProdExpense[];
+      if (stored.length === 0 && cycles.length > 0 && org?.enterprises?.length) {
+        const seeded = seedProdExpenses(cycles, org.enterprises);
+        localStorage.setItem(PROD_EXP_KEY, JSON.stringify(seeded));
+        return seeded;
+      }
+      return stored;
+    } catch { return []; }
+  });
+  function saveProdExp(exps: ProdExpense[]) {
+    setProdExpState(exps);
+    localStorage.setItem(PROD_EXP_KEY, JSON.stringify(exps));
+  }
+
+  // ── Finance UI state ──────────────────────────────────────────────────────
+  const [showExpForm, setShowExpForm] = useState(false);
+  const [pricePerKg, setPricePerKg] = useState(28);
+  const [expForm, setExpForm] = useState<{
+    enterpriseId: string; cycleId: string; type: ProdExpense['type'];
+    description: string; amount: string; date: string;
+  }>({ enterpriseId: '', cycleId: '', type: 'feed', description: '', amount: '', date: new Date().toISOString().slice(0, 10) });
 
   // ── LS reads (all at top, useMemo with [] deps) ──────────────────────────
   const txs = useMemo<any[]>(() => { try { return JSON.parse(localStorage.getItem('agronexus_v2_transactions') ?? '[]') as any[]; } catch { return []; } }, []);
@@ -717,123 +768,256 @@ export default function ReportsEngine() {
         )}
 
         {/* ════════════════════════════════════════════════════════ FINANCE */}
-        {activeTab === 'finance' && (
-          <>
-            <DateRangeFilter from={dateFrom} to={dateTo} onFrom={setDateFrom} onTo={setDateTo} />
+        {activeTab === 'finance' && (() => {
+          // ── Finance computed values (inline IIFE to avoid top-level hooks) ──
+          const totalProdExp = prodExpState.reduce((s, e) => s + e.amount, 0);
+          const farmTotalRevenue = totalIncome + orders.reduce((s: number, o: any) => s + (o.total ?? 0), 0);
+          const farmNet = farmTotalRevenue - totalExpense - totalProdExp;
 
-            {/* Monthly P&L */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-              <SectionHeader title="Monthly P&L — Last 12 Months"
-                action={<ExportBtn onClick={() => exportCSV('monthly_pl.csv', monthlyPL.map(r => ({ Month: r.ym, Income: r.inc, Expenses: r.exp, Net: r.net, 'Margin%': r.margin.toFixed(1) })))} />} />
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead><tr className="border-b border-gray-200 dark:border-gray-700">
-                    <th className="text-left py-2 px-2 text-gray-500 font-medium">Month</th>
-                    <th className="text-right py-2 px-2 text-gray-500 font-medium">Income</th>
-                    <th className="text-right py-2 px-2 text-gray-500 font-medium">Expenses</th>
-                    <th className="text-right py-2 px-2 text-gray-500 font-medium">Net</th>
-                    <th className="text-right py-2 px-2 text-gray-500 font-medium">Margin</th>
-                  </tr></thead>
-                  <tbody>{monthlyPL.map(row => (
-                    <tr key={row.ym} className="border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750">
-                      <td className="py-2 px-2 text-gray-700 dark:text-gray-300">{monthLabel(row.ym)}</td>
-                      <td className="py-2 px-2 text-right text-green-600 dark:text-green-400">{fmt(row.inc, currency)}</td>
-                      <td className="py-2 px-2 text-right text-red-500 dark:text-red-400">{fmt(row.exp, currency)}</td>
-                      <td className={`py-2 px-2 text-right font-medium ${row.net >= 0 ? 'text-green-600' : 'text-red-500'}`}>{fmt(row.net, currency)}</td>
-                      <td className={`py-2 px-2 text-right font-medium ${row.margin > 20 ? 'text-green-600' : row.margin > 0 ? 'text-amber-600' : 'text-red-500'}`}>{row.margin.toFixed(1)}%</td>
-                    </tr>
-                  ))}</tbody>
-                </table>
+          const formCycles = expForm.enterpriseId
+            ? cycles.filter((c: any) => c.enterpriseId === expForm.enterpriseId)
+            : cycles;
+
+          const enterpriseProfitData = (org?.enterprises ?? []).map((ent: any) => {
+            const entCycleIds = new Set(cycles.filter((c: any) => c.enterpriseId === ent.id).map((c: any) => c.id));
+            const entIncome = filteredTxs.filter(t => t.type === 'income' && entCycleIds.has(t.cycleId)).reduce((s: number, t: any) => s + (t.amount ?? 0), 0)
+              + orders.filter((o: any) => o.enterpriseId === ent.id).reduce((s: number, o: any) => s + (o.total ?? 0), 0);
+            const entProdExp = prodExpState.filter(e => e.enterpriseId === ent.id).reduce((s, e) => s + e.amount, 0);
+            const entOtherExp = filteredTxs.filter(t => t.type === 'expense' && entCycleIds.has(t.cycleId)).reduce((s: number, t: any) => s + (t.amount ?? 0), 0);
+            const net = entIncome - entProdExp - entOtherExp;
+            const margin = entIncome > 0 ? (net / entIncome * 100) : 0;
+
+            const byType: Record<string, number> = {};
+            prodExpState.filter(e => e.enterpriseId === ent.id).forEach(e => {
+              byType[e.type] = (byType[e.type] ?? 0) + e.amount;
+            });
+
+            return { ent, entIncome, entProdExp, entOtherExp, net, margin, byType };
+          });
+
+          const completedBatches = batches.filter((b: any) => b.status === 'completed');
+
+          function handleSaveExp() {
+            if (!expForm.enterpriseId || !expForm.cycleId || !expForm.description || !expForm.amount) return;
+            const newExp: ProdExpense = {
+              id: uuidv4(),
+              type: expForm.type,
+              description: expForm.description,
+              amount: parseFloat(expForm.amount) || 0,
+              date: expForm.date,
+              cycleId: expForm.cycleId,
+              enterpriseId: expForm.enterpriseId,
+            };
+            saveProdExp([...prodExpState, newExp]);
+            setExpForm({ enterpriseId: '', cycleId: '', type: 'feed', description: '', amount: '', date: new Date().toISOString().slice(0, 10) });
+            setShowExpForm(false);
+          }
+
+          return (
+            <>
+              {/* D. Farm Total P&L strip */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white dark:bg-gray-800 rounded-xl border-2 border-green-300 dark:border-green-700 p-5 flex flex-col gap-1">
+                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total Revenue</span>
+                  <span className="text-3xl font-bold text-green-600 dark:text-green-400">{fmt(farmTotalRevenue, currency)}</span>
+                  <span className="text-xs text-gray-400">Transactions + Orders</span>
+                </div>
+                <div className="bg-white dark:bg-gray-800 rounded-xl border-2 border-amber-300 dark:border-amber-700 p-5 flex flex-col gap-1">
+                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total Production Costs</span>
+                  <span className="text-3xl font-bold text-amber-600 dark:text-amber-400">{fmt(totalProdExp + totalExpense, currency)}</span>
+                  <span className="text-xs text-gray-400">Prod expenses + other expenses</span>
+                </div>
+                <div className={`bg-white dark:bg-gray-800 rounded-xl border-2 p-5 flex flex-col gap-1 ${farmNet >= 0 ? 'border-green-300 dark:border-green-700' : 'border-red-300 dark:border-red-700'}`}>
+                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Net Profit</span>
+                  <span className={`text-3xl font-bold ${farmNet >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{fmt(farmNet, currency)}</span>
+                  <span className="text-xs text-gray-400">Revenue − all costs</span>
+                </div>
               </div>
-            </div>
 
-            {/* Category breakdown */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {[{ title: 'Income by Category', data: incomeByCat, color: 'text-green-600' }, { title: 'Expense by Category', data: expenseByCat, color: 'text-red-500' }].map(({ title, data, color }) => (
-                <div key={title} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-                  <SectionHeader title={title} />
-                  {data.length === 0 ? <p className="text-sm text-gray-400">No data</p> : (
+              {/* A. Log Production Expense form */}
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+                <SectionHeader title="Production Expenses"
+                  action={
+                    <button onClick={() => setShowExpForm(v => !v)}
+                      className="flex items-center gap-1.5 text-xs font-medium bg-violet-600 hover:bg-violet-700 text-white px-3 py-1.5 rounded-lg transition-colors">
+                      {showExpForm ? '✕ Cancel' : '+ Log Expense'}
+                    </button>
+                  } />
+                {showExpForm && (
+                  <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-750 rounded-xl border border-gray-200 dark:border-gray-700 grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs text-gray-500 font-medium">Enterprise</label>
+                      <select value={expForm.enterpriseId} onChange={e => setExpForm(f => ({ ...f, enterpriseId: e.target.value, cycleId: '' }))}
+                        className="text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
+                        <option value="">Select enterprise…</option>
+                        {(org?.enterprises ?? []).map((ent: any) => <option key={ent.id} value={ent.id}>{ent.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs text-gray-500 font-medium">Cycle</label>
+                      <select value={expForm.cycleId} onChange={e => setExpForm(f => ({ ...f, cycleId: e.target.value }))}
+                        className="text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
+                        <option value="">Select cycle…</option>
+                        {formCycles.map((c: any) => <option key={c.id} value={c.id}>Cycle #{c.cycleNumber ?? c.id}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs text-gray-500 font-medium">Type</label>
+                      <select value={expForm.type} onChange={e => setExpForm(f => ({ ...f, type: e.target.value as ProdExpense['type'] }))}
+                        className="text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
+                        <option value="feed">Feed</option>
+                        <option value="vet">Vet</option>
+                        <option value="chicks">Chicks / Fingerlings / Seeds</option>
+                        <option value="seeds">Seeds</option>
+                        <option value="fingerlings">Fingerlings</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                    <div className="flex flex-col gap-1 md:col-span-2">
+                      <label className="text-xs text-gray-500 font-medium">Description</label>
+                      <input type="text" value={expForm.description} onChange={e => setExpForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Broiler starter 25kg × 80 bags"
+                        className="text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs text-gray-500 font-medium">Amount ({currency})</label>
+                      <input type="number" value={expForm.amount} onChange={e => setExpForm(f => ({ ...f, amount: e.target.value }))} placeholder="0"
+                        className="text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs text-gray-500 font-medium">Date</label>
+                      <input type="date" value={expForm.date} onChange={e => setExpForm(f => ({ ...f, date: e.target.value }))}
+                        className="text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+                    </div>
+                    <div className="md:col-span-3 flex justify-end">
+                      <button onClick={handleSaveExp}
+                        className="flex items-center gap-1.5 text-sm font-medium bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors">
+                        Save Expense
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {prodExpState.length === 0
+                  ? <p className="text-sm text-gray-400">No production expenses logged yet. Click "+ Log Expense" to add one.</p>
+                  : (
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
-                        <thead><tr className="border-b border-gray-100 dark:border-gray-700">
-                          <th className="text-left py-1.5 text-gray-500 font-medium">Category</th>
-                          <th className={`text-right py-1.5 ${color} font-medium`}>Amount</th>
-                          <th className="text-right py-1.5 text-gray-500 font-medium">%</th>
-                          <th className="text-right py-1.5 text-gray-500 font-medium">Txs</th>
+                        <thead><tr className="border-b border-gray-200 dark:border-gray-700">
+                          <th className="text-left py-2 text-gray-500 font-medium">Date</th>
+                          <th className="text-left py-2 text-gray-500 font-medium">Type</th>
+                          <th className="text-left py-2 text-gray-500 font-medium">Description</th>
+                          <th className="text-right py-2 text-gray-500 font-medium">Amount</th>
                         </tr></thead>
-                        <tbody>{data.map(row => (
-                          <tr key={row.cat} className="border-b border-gray-50 dark:border-gray-700">
-                            <td className="py-1.5 text-gray-700 dark:text-gray-300">{row.cat}</td>
-                            <td className={`py-1.5 text-right font-medium ${color}`}>{fmt(row.amount, currency)}</td>
-                            <td className="py-1.5 text-right text-gray-500">{row.pct}%</td>
-                            <td className="py-1.5 text-right text-gray-400">{row.count}</td>
+                        <tbody>{prodExpState.map(e => (
+                          <tr key={e.id} className="border-b border-gray-50 dark:border-gray-700">
+                            <td className="py-1.5 text-gray-500 text-xs">{e.date}</td>
+                            <td className="py-1.5"><span className="capitalize text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300 px-2 py-0.5 rounded-full">{e.type}</span></td>
+                            <td className="py-1.5 text-gray-700 dark:text-gray-300">{e.description}</td>
+                            <td className="py-1.5 text-right font-medium text-amber-600">{fmt(e.amount, currency)}</td>
                           </tr>
                         ))}</tbody>
                       </table>
                     </div>
-                  )}
-                </div>
-              ))}
-            </div>
+                  )
+                }
+              </div>
 
-            {/* Cash flow */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-              <SectionHeader title="Cash Flow Statement (chronological, first 50)"
-                action={<ExportBtn onClick={() => exportCSV('cash_flow.csv', cashFlow.map(r => ({ Date: r.date, Type: r.type, Category: r.category, Amount: r.amount, Balance: r.balance })))} />} />
-              {cashFlow.length === 0 ? <p className="text-sm text-gray-400">No transactions in range.</p> : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead><tr className="border-b border-gray-200 dark:border-gray-700">
-                      <th className="text-left py-2 px-2 text-gray-500 font-medium">Date</th>
-                      <th className="text-left py-2 px-2 text-gray-500 font-medium">Type</th>
-                      <th className="text-left py-2 px-2 text-gray-500 font-medium">Category</th>
-                      <th className="text-right py-2 px-2 text-gray-500 font-medium">Amount</th>
-                      <th className="text-right py-2 px-2 text-gray-500 font-medium">Balance</th>
-                    </tr></thead>
-                    <tbody>{cashFlow.map((r, i) => (
-                      <tr key={i} className="border-b border-gray-50 dark:border-gray-700">
-                        <td className="py-1.5 px-2 text-gray-600 dark:text-gray-400">{r.date}</td>
-                        <td className="py-1.5 px-2"><StatusBadge status={r.type} /></td>
-                        <td className="py-1.5 px-2 text-gray-600 dark:text-gray-400">{r.category ?? '—'}</td>
-                        <td className={`py-1.5 px-2 text-right font-medium ${r.type === 'income' ? 'text-green-600' : 'text-red-500'}`}>{fmt(r.amount ?? 0, currency)}</td>
-                        <td className={`py-1.5 px-2 text-right font-medium ${r.balance >= 0 ? 'text-green-600' : 'text-red-500'}`}>{fmt(r.balance, currency)}</td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
+              {/* B. Profitability by Enterprise */}
+              <div className="space-y-4">
+                <SectionHeader title="Profitability by Enterprise" />
+                {enterpriseProfitData.map(({ ent, entIncome, entProdExp, entOtherExp, net, margin, byType }) => (
+                  <div key={ent.id} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-base font-semibold text-gray-900 dark:text-white">{ent.name}</span>
+                      <span className="text-xs text-gray-400 capitalize">{ent.type}</span>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-3">
+                      <div className="text-center">
+                        <div className="text-lg font-bold text-green-600 dark:text-green-400">{fmt(entIncome, currency)}</div>
+                        <div className="text-xs text-gray-500">Total Income</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-lg font-bold text-amber-600 dark:text-amber-400">{fmt(entProdExp, currency)}</div>
+                        <div className="text-xs text-gray-500">Prod Expenses</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-lg font-bold text-red-500 dark:text-red-400">{fmt(entOtherExp, currency)}</div>
+                        <div className="text-xs text-gray-500">Other Expenses</div>
+                      </div>
+                      <div className="text-center">
+                        <div className={`text-lg font-bold ${net >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>{fmt(net, currency)}</div>
+                        <div className="text-xs text-gray-500">Net Profit</div>
+                      </div>
+                      <div className="text-center">
+                        <div className={`text-lg font-bold ${margin > 20 ? 'text-green-600' : margin > 0 ? 'text-amber-600' : 'text-red-500'}`}>{margin.toFixed(1)}%</div>
+                        <div className="text-xs text-gray-500">Margin</div>
+                      </div>
+                    </div>
+                    {Object.keys(byType).length > 0 && (
+                      <div className="border-t border-gray-100 dark:border-gray-700 pt-3">
+                        <div className="text-xs font-medium text-gray-500 uppercase mb-2">Prod Expense Breakdown</div>
+                        <div className="flex flex-wrap gap-3">
+                          {Object.entries(byType).map(([type, amt]) => (
+                            <div key={type} className="flex items-center gap-1.5">
+                              <span className="capitalize text-xs text-gray-600 dark:text-gray-400">{type}:</span>
+                              <span className="text-xs font-semibold text-amber-600">{fmt(amt, currency)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* C. Batch Profitability */}
+              {completedBatches.length > 0 && (
+                <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+                  <SectionHeader title="Batch Profitability" />
+                  <div className="flex items-center gap-3 mb-4">
+                    <label className="text-sm text-gray-600 dark:text-gray-400">Selling price: {currency}</label>
+                    <input type="number" value={pricePerKg} onChange={e => setPricePerKg(parseFloat(e.target.value) || 0)}
+                      className="w-20 text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+                    <span className="text-sm text-gray-500">/kg</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead><tr className="border-b border-gray-200 dark:border-gray-700">
+                        <th className="text-left py-2 text-gray-500 font-medium">Batch ID</th>
+                        <th className="text-right py-2 text-gray-500 font-medium">Input kg</th>
+                        <th className="text-right py-2 text-gray-500 font-medium">Output kg</th>
+                        <th className="text-right py-2 text-gray-500 font-medium">Yield %</th>
+                        <th className="text-right py-2 text-gray-500 font-medium">Est. Revenue</th>
+                        <th className="text-right py-2 text-gray-500 font-medium">Linked Exp</th>
+                        <th className="text-right py-2 text-gray-500 font-medium">Net</th>
+                        <th className="text-left py-2 pl-2 text-gray-500 font-medium">Quality</th>
+                      </tr></thead>
+                      <tbody>{completedBatches.map((b: any) => {
+                        const inputKg = b.inputWeightKg ?? 0;
+                        const outputKg = b.outputWeightKg ?? 0;
+                        const yieldPct = inputKg > 0 ? (outputKg / inputKg * 100).toFixed(1) : '—';
+                        const estRev = outputKg * pricePerKg;
+                        const linkedExp = prodExpState.filter(e => e.batchId === b.id).reduce((s, e) => s + e.amount, 0);
+                        const batchNet = estRev - linkedExp;
+                        return (
+                          <tr key={b.id} className="border-b border-gray-50 dark:border-gray-700">
+                            <td className="py-1.5 font-mono text-xs text-gray-600 dark:text-gray-400">{b.id}</td>
+                            <td className="py-1.5 text-right text-gray-600 dark:text-gray-400">{inputKg.toFixed(1)}</td>
+                            <td className="py-1.5 text-right text-gray-600 dark:text-gray-400">{outputKg.toFixed(1)}</td>
+                            <td className="py-1.5 text-right text-amber-600">{yieldPct}{yieldPct !== '—' ? '%' : ''}</td>
+                            <td className="py-1.5 text-right text-green-600 font-medium">{fmt(estRev, currency)}</td>
+                            <td className="py-1.5 text-right text-amber-600">{linkedExp > 0 ? fmt(linkedExp, currency) : '—'}</td>
+                            <td className={`py-1.5 text-right font-medium ${batchNet >= 0 ? 'text-green-600' : 'text-red-500'}`}>{fmt(batchNet, currency)}</td>
+                            <td className="py-1.5 pl-2"><StatusBadge status={b.qualityStatus ?? 'pending'} /></td>
+                          </tr>
+                        );
+                      })}</tbody>
+                    </table>
+                  </div>
                 </div>
               )}
-            </div>
-
-            {/* Sales orders */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-              <SectionHeader title="Sales Orders"
-                action={<ExportBtn onClick={() => exportCSV('sales_orders.csv', orders.map((o: any) => ({ ID: o.id, Date: o.date, Customer: o.customerName, Total: o.total, Status: o.status })))} />} />
-              <div className="grid grid-cols-3 gap-4 mb-4">
-                <div className="text-center"><div className="text-xl font-bold text-gray-900 dark:text-white">{fmt(orderSummary.total, currency)}</div><div className="text-xs text-gray-500">Total Revenue</div></div>
-                <div className="text-center"><div className="text-xl font-bold text-gray-900 dark:text-white">{orderSummary.count}</div><div className="text-xs text-gray-500">Orders</div></div>
-                <div className="text-center"><div className="text-xl font-bold text-gray-900 dark:text-white">{fmt(orderSummary.avg, currency)}</div><div className="text-xs text-gray-500">Avg Order</div></div>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead><tr className="border-b border-gray-200 dark:border-gray-700">
-                    <th className="text-left py-2 text-gray-500 font-medium">Date</th>
-                    <th className="text-left py-2 text-gray-500 font-medium">Customer</th>
-                    <th className="text-right py-2 text-gray-500 font-medium">Total</th>
-                    <th className="text-left py-2 pl-2 text-gray-500 font-medium">Status</th>
-                  </tr></thead>
-                  <tbody>{orders.slice(0, 30).map((o: any) => (
-                    <tr key={o.id} className="border-b border-gray-50 dark:border-gray-700">
-                      <td className="py-1.5 text-gray-600 dark:text-gray-400">{o.date}</td>
-                      <td className="py-1.5 text-gray-700 dark:text-gray-300">{o.customerName}</td>
-                      <td className="py-1.5 text-right font-medium text-gray-900 dark:text-white">{fmt(o.total ?? 0, currency)}</td>
-                      <td className="py-1.5 pl-2"><StatusBadge status={o.status} /></td>
-                    </tr>
-                  ))}</tbody>
-                </table>
-              </div>
-            </div>
-          </>
-        )}
+            </>
+          );
+        })()}
 
         {/* ════════════════════════════════════════════════════ PRODUCTION */}
         {activeTab === 'production' && (
@@ -1056,147 +1240,6 @@ export default function ReportsEngine() {
           </>
         )}
 
-        {/* ═══════════════════════════════════════════════════════ STAFF */}
-        {activeTab === 'staff' && (
-          <>
-            {/* KPI strip */}
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              <KpiCard label="Total Staff" value={hrStaff.length} icon={<Users className="w-4 h-4" />} />
-              <KpiCard label="Active Staff" value={hrStaff.filter((s: any) => s.active).length} accent="green" icon={<CheckCircle className="w-4 h-4" />} />
-              <KpiCard label="This Week Hours" value={`${thisWeekHours.toFixed(1)}h`} icon={<Clock className="w-4 h-4" />} />
-              <KpiCard label="Approved Hours" value={`${approvedHours.toFixed(1)}h`} accent="green" icon={<CheckCircle className="w-4 h-4" />} />
-              <KpiCard label="Pending Hours" value={`${pendingHours.toFixed(1)}h`} accent={pendingHours > 0 ? 'amber' : 'default'} icon={<Clock className="w-4 h-4" />} />
-              <KpiCard label="Est. Week Cost" value={fmt(weekCost, currency)} accent="violet" icon={<DollarSign className="w-4 h-4" />} />
-            </div>
-
-            {/* Hours bar chart */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-              <SectionHeader title="Hours by Week — Last 8 Weeks" />
-              <div className="flex items-end gap-3 overflow-x-auto pb-2">
-                {weeklyHours.map(w => (
-                  <div key={w.ws} className="flex flex-col items-center gap-1 min-w-[44px]">
-                    <span className="text-xs text-gray-500">{w.total.toFixed(0)}h</span>
-                    <div className="w-8 bg-violet-400 dark:bg-violet-500 rounded-t" style={{ height: `${Math.max(2, Math.round(w.total / maxWeekHours * 100))}px` }} title={`${w.total.toFixed(1)} hours`} />
-                    <span className="text-xs text-gray-400">{w.label}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Staff performance */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-              <SectionHeader title="Staff Performance This Week"
-                action={<ExportBtn onClick={() => exportCSV('staff_performance.csv', staffPerf.map(s => ({ Name: s.name, Role: s.role, DailyRate: s.dailyRate, WeekHours: s.hours, ApprovedHours: s.approved, WeekCost: s.cost })))} />} />
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead><tr className="border-b border-gray-200 dark:border-gray-700">
-                    <th className="text-left py-2 text-gray-500 font-medium">Name</th>
-                    <th className="text-left py-2 text-gray-500 font-medium">Role</th>
-                    <th className="text-right py-2 text-gray-500 font-medium">Daily Rate</th>
-                    <th className="text-right py-2 text-gray-500 font-medium">Hours</th>
-                    <th className="text-right py-2 text-gray-500 font-medium">Approved</th>
-                    <th className="text-right py-2 text-gray-500 font-medium">Week Cost</th>
-                  </tr></thead>
-                  <tbody>{staffPerf.map(s => (
-                    <tr key={s.id} className="border-b border-gray-50 dark:border-gray-700">
-                      <td className="py-1.5 text-gray-700 dark:text-gray-300">{s.name}</td>
-                      <td className="py-1.5 text-gray-500 capitalize">{s.role}</td>
-                      <td className="py-1.5 text-right text-gray-600 dark:text-gray-400">{fmt(s.dailyRate ?? 0, currency)}</td>
-                      <td className="py-1.5 text-right text-gray-700 dark:text-gray-300">{s.hours.toFixed(1)}</td>
-                      <td className="py-1.5 text-right text-green-600">{s.approved.toFixed(1)}</td>
-                      <td className="py-1.5 text-right font-medium text-gray-900 dark:text-white">{fmt(s.cost, currency)}</td>
-                    </tr>
-                  ))}</tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Labour cost by enterprise */}
-            {labourByEnterprise.length > 0 && (
-              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-                <SectionHeader title="Labour Cost by Enterprise (This Week)" />
-                <div className="space-y-3">
-                  {labourByEnterprise.map(row => (
-                    <div key={row.name} className="flex items-center gap-3">
-                      <span className="text-sm text-gray-700 dark:text-gray-300 w-28 truncate">{row.name}</span>
-                      <div className="flex-1">
-                        <CssBar value={row.cost} maxValue={maxLabourCost} color="bg-violet-400" width />
-                      </div>
-                      <span className="text-sm text-gray-500 w-16 text-right">{row.hours.toFixed(0)}h</span>
-                      <span className="text-sm font-medium text-gray-900 dark:text-white w-28 text-right">{fmt(row.cost, currency)}</span>
-                      <span className="text-xs text-gray-400 w-10 text-right">{row.pct}%</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Pending approvals */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-              <SectionHeader title={`Pending Approvals${pendingApprovals.length > 0 ? ` (${pendingApprovals.length})` : ''}`} />
-              {pendingApprovals.length === 0 ? (
-                <p className="text-sm text-green-600 flex items-center gap-2"><CheckCircle className="w-4 h-4" /> All timelog entries are approved.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead><tr className="border-b border-gray-200 dark:border-gray-700">
-                      <th className="text-left py-2 text-gray-500 font-medium">Date</th>
-                      <th className="text-left py-2 text-gray-500 font-medium">Staff</th>
-                      <th className="text-right py-2 text-gray-500 font-medium">Hours</th>
-                      <th className="text-left py-2 pl-2 text-gray-500 font-medium">Enterprise</th>
-                    </tr></thead>
-                    <tbody>{pendingApprovals.map((log: any) => (
-                      <tr key={log.id} className="border-b border-gray-50 dark:border-gray-700">
-                        <td className="py-1.5 text-gray-600 dark:text-gray-400">{log.date}</td>
-                        <td className="py-1.5 text-gray-700 dark:text-gray-300">{log.staffName}</td>
-                        <td className="py-1.5 text-right text-amber-600 font-medium">{log.hoursWorked}</td>
-                        <td className="py-1.5 pl-2 text-gray-500">{log.enterpriseId ?? '—'}</td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            {/* Health compliance */}
-            {(vaccDue.length > 0 || activeWithdrawal.length > 0) && (
-              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-                <SectionHeader title="Animal Health Compliance" />
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {vaccDue.length > 0 && (
-                    <div>
-                      <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Vaccinations Due (14 days)</div>
-                      <div className="space-y-1">
-                        {vaccDue.map((v: any) => (
-                          <div key={v.id} className={`flex items-center justify-between p-2 rounded ${v.overdue ? 'bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800' : 'bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800'}`}>
-                            <span className="text-sm text-gray-700 dark:text-gray-300">{v.animalGroup}</span>
-                            <span className={`text-xs font-medium ${v.overdue ? 'text-red-600' : 'text-amber-600'}`}>{v.overdue ? `${Math.abs(v.daysUntil)}d overdue` : `in ${v.daysUntil}d`}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {activeWithdrawal.length > 0 && (
-                    <div>
-                      <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Active Withdrawal Periods</div>
-                      <div className="space-y-1">
-                        {activeWithdrawal.map((t: any) => (
-                          <div key={t.id} className="flex items-center justify-between p-2 rounded bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800">
-                            <div>
-                              <div className="text-sm text-gray-700 dark:text-gray-300">{t.animalGroup}</div>
-                              <div className="text-xs text-gray-500">{t.diagnosis}</div>
-                            </div>
-                            <span className="text-xs font-medium text-blue-600 dark:text-blue-400">{t.remaining}d remaining</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </>
-        )}
 
         {/* ══════════════════════════════════════════════════ PROCUREMENT */}
         {activeTab === 'procurement' && (

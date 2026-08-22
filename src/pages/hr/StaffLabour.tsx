@@ -1,653 +1,420 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// AgroNexus v2 — Staff & Labour Tracking
-// Daily task allocation, time logs, and cost attribution per enterprise.
-// ─────────────────────────────────────────────────────────────────────────────
-import React, { useState, useMemo } from 'react';
-import { Plus, X, Users, Clock, DollarSign, CheckCircle2, Circle, ToggleLeft, ToggleRight } from 'lucide-react';
+import React, { useState } from 'react';
+import { Plus, X, Users, Shield, Edit2, Trash2, CheckCircle, XCircle, ToggleLeft, ToggleRight, Key, UserCheck } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { useOrg } from '@/store/orgStore';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+type StaffRole = 'farmhand' | 'supervisor' | 'driver' | 'vet_officer' | 'accountant' | 'manager' | 'farm_admin' | 'owner';
 
-type StaffRole = 'farmhand' | 'supervisor' | 'driver' | 'vet_officer' | 'admin' | 'other';
+interface Permission {
+  key: string;
+  label: string;
+  description: string;
+  group: 'Operations' | 'Finance' | 'IoT & Data' | 'Administration';
+}
 
-interface StaffMember {
+interface Employee {
   id: string;
   name: string;
   role: StaffRole;
+  email: string;
   phone: string;
-  dailyRate: number;
-  active: boolean;
   hiredDate: string;
+  active: boolean;
+  enterpriseIds: string[];
+  permissions: string[];
 }
 
-interface TimeLog {
-  id: string;
-  staffId: string;
-  enterpriseId: string;
-  date: string;
-  task: string;
-  hoursWorked: number;
-  notes: string;
-  approved: boolean;
-}
-
-// ─── Storage keys ─────────────────────────────────────────────────────────────
-
-const STAFF_KEY   = 'agronexus_v2_hr_staff';
-const TIMELOG_KEY = 'agronexus_v2_hr_timelog';
-
-function load<T>(key: string): T[] {
-  try { return JSON.parse(localStorage.getItem(key) ?? '[]'); } catch { return []; }
-}
-
-// ─── Seed ─────────────────────────────────────────────────────────────────────
-
-function seedStaff(): StaffMember[] {
-  return [
-    { id: uuidv4(), name: 'Alice Banda',   role: 'farmhand',   phone: '+260971000001', dailyRate: 85,  active: true, hiredDate: '2023-03-15' },
-    { id: uuidv4(), name: 'Bob Mwale',     role: 'supervisor', phone: '+260971000002', dailyRate: 150, active: true, hiredDate: '2022-07-01' },
-    { id: uuidv4(), name: 'Carol Phiri',   role: 'driver',     phone: '+260971000003', dailyRate: 110, active: true, hiredDate: '2024-01-10' },
-  ];
-}
-
-function seedTimeLogs(staff: StaffMember[], firstEnterpriseId: string): TimeLog[] {
-  const today = new Date();
-  const fmt = (d: Date) => d.toISOString().slice(0, 10);
-  const daysAgo = (n: number) => { const d = new Date(today); d.setDate(d.getDate() - n); return fmt(d); };
-
-  const alice = staff.find(s => s.name === 'Alice Banda')!;
-  const bob   = staff.find(s => s.name === 'Bob Mwale')!;
-  const carol = staff.find(s => s.name === 'Carol Phiri')!;
-
-  return [
-    { id: uuidv4(), staffId: alice.id, enterpriseId: firstEnterpriseId, date: daysAgo(0), task: 'Feeding & watering birds', hoursWorked: 8, notes: '', approved: false },
-    { id: uuidv4(), staffId: bob.id,   enterpriseId: firstEnterpriseId, date: daysAgo(0), task: 'Pen inspection & mortality count', hoursWorked: 6, notes: 'Pen 3 ventilation issue noted', approved: true },
-    { id: uuidv4(), staffId: alice.id, enterpriseId: firstEnterpriseId, date: daysAgo(1), task: 'Litter management', hoursWorked: 8, notes: '', approved: true },
-    { id: uuidv4(), staffId: carol.id, enterpriseId: firstEnterpriseId, date: daysAgo(2), task: 'Feed delivery run to mill', hoursWorked: 5, notes: 'Delivered 2 MT broiler grower', approved: true },
-    { id: uuidv4(), staffId: bob.id,   enterpriseId: firstEnterpriseId, date: daysAgo(3), task: 'Weighing & grading – week 4', hoursWorked: 7, notes: 'Avg weight 1.85 kg', approved: true },
-  ];
-}
-
-// ─── Hook ─────────────────────────────────────────────────────────────────────
-
-function useHR(firstEnterpriseId: string | null) {
-  const [staff, setStaff] = React.useState<StaffMember[]>(() => {
-    const stored = load<StaffMember>(STAFF_KEY);
-    if (stored.length > 0) return stored;
-    const seeded = seedStaff();
-    localStorage.setItem(STAFF_KEY, JSON.stringify(seeded));
-    return seeded;
-  });
-
-  const [timeLogs, setTimeLogs] = React.useState<TimeLog[]>(() => {
-    const stored = load<TimeLog>(TIMELOG_KEY);
-    if (stored.length > 0) return stored;
-    const currentStaff = load<StaffMember>(STAFF_KEY);
-    if (currentStaff.length === 0 || !firstEnterpriseId) return [];
-    const seeded = seedTimeLogs(currentStaff, firstEnterpriseId);
-    localStorage.setItem(TIMELOG_KEY, JSON.stringify(seeded));
-    return seeded;
-  });
-
-  React.useEffect(() => { localStorage.setItem(STAFF_KEY,   JSON.stringify(staff));    }, [staff]);
-  React.useEffect(() => { localStorage.setItem(TIMELOG_KEY, JSON.stringify(timeLogs)); }, [timeLogs]);
-
-  function toggleApproved(id: string) {
-    setTimeLogs(prev => prev.map(l => l.id === id ? { ...l, approved: !l.approved } : l));
-  }
-  function toggleActive(id: string) {
-    setStaff(prev => prev.map(s => s.id === id ? { ...s, active: !s.active } : s));
-  }
-
-  return { staff, setStaff, timeLogs, setTimeLogs, toggleApproved, toggleActive };
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const ROLE_LABELS: Record<StaffRole, string> = {
-  farmhand: 'Farm Hand', supervisor: 'Supervisor', driver: 'Driver',
-  vet_officer: 'Vet Officer', admin: 'Admin', other: 'Other',
-};
-
-const ROLE_COLOURS: Record<StaffRole, string> = {
-  farmhand:    'bg-green-100 text-green-700',
-  supervisor:  'bg-blue-100 text-blue-700',
-  driver:      'bg-orange-100 text-orange-700',
-  vet_officer: 'bg-purple-100 text-purple-700',
-  admin:       'bg-slate-100 text-slate-700',
-  other:       'bg-gray-100 text-gray-700',
-};
-
-function getWeekBounds(offset = 0): { start: string; end: string } {
-  const now = new Date();
-  const dow = now.getDay(); // 0=Sun
-  const mon = new Date(now);
-  mon.setDate(now.getDate() - ((dow + 6) % 7) + offset * 7);
-  const sun = new Date(mon);
-  sun.setDate(mon.getDate() + 6);
-  const fmt = (d: Date) => d.toISOString().slice(0, 10);
-  return { start: fmt(mon), end: fmt(sun) };
-}
-
-function labourCost(hours: number, dailyRate: number) {
-  return (hours / 8) * dailyRate;
-}
-
-// ─── Small UI atoms ───────────────────────────────────────────────────────────
-
-function Badge({ children, colour }: { children: React.ReactNode; colour: string }) {
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${colour}`}>
-      {children}
-    </span>
-  );
-}
-
-function KPI({ label, value, sub, icon: Icon, colour }: {
-  label: string; value: string | number; sub?: string; icon: React.ElementType; colour: string;
-}) {
-  return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-start gap-3">
-      <div className={`p-2 rounded-lg ${colour}`}>
-        <Icon className="w-5 h-5" />
-      </div>
-      <div>
-        <p className="text-xs text-slate-500">{label}</p>
-        <p className="text-xl font-bold text-slate-800">{value}</p>
-        {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
-      </div>
-    </div>
-  );
-}
-
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto m-4">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h3 className="font-semibold text-slate-800">{title}</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
-        </div>
-        <div className="p-6">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <label className="text-xs font-medium text-slate-600">{label}</label>
-      {children}
-    </div>
-  );
-}
-
-const inp = 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400';
-const sel = `${inp} bg-white`;
-
-// ─── Staff Tab ────────────────────────────────────────────────────────────────
-
-function StaffTab({
-  staff, setStaff, toggleActive,
-}: {
-  staff: StaffMember[];
-  setStaff: React.Dispatch<React.SetStateAction<StaffMember[]>>;
-  toggleActive: (id: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const blank: Omit<StaffMember, 'id'> = {
-    name: '', role: 'farmhand', phone: '', dailyRate: 0, active: true, hiredDate: '',
-  };
-  const [form, setForm] = useState(blank);
-
-  function save() {
-    if (!form.name) return;
-    setStaff(prev => [...prev, { ...form, id: uuidv4() }]);
-    setForm(blank);
-    setOpen(false);
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex justify-end">
-        <button onClick={() => setOpen(true)}
-          className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-          <Plus className="w-4 h-4" /> Add Staff
-        </button>
-      </div>
-
-      <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wide">
-            <tr>
-              {['Name','Role','Phone','Daily Rate','Hired','Active'].map(h => (
-                <th key={h} className="px-4 py-3 text-left font-medium">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {staff.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400">No staff yet.</td></tr>
-            )}
-            {staff.map(s => (
-              <tr key={s.id} className={`hover:bg-slate-50 ${!s.active ? 'opacity-50' : ''}`}>
-                <td className="px-4 py-3 font-medium text-slate-800">{s.name}</td>
-                <td className="px-4 py-3">
-                  <Badge colour={ROLE_COLOURS[s.role]}>{ROLE_LABELS[s.role]}</Badge>
-                </td>
-                <td className="px-4 py-3 text-slate-500">{s.phone}</td>
-                <td className="px-4 py-3 text-slate-700">K {s.dailyRate}/day</td>
-                <td className="px-4 py-3 text-slate-500">{s.hiredDate}</td>
-                <td className="px-4 py-3">
-                  <button onClick={() => toggleActive(s.id)} className="text-slate-400 hover:text-violet-600 transition-colors">
-                    {s.active
-                      ? <ToggleRight className="w-6 h-6 text-green-500" />
-                      : <ToggleLeft className="w-6 h-6 text-slate-300" />}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {open && (
-        <Modal title="Add Staff Member" onClose={() => setOpen(false)}>
-          <div className="space-y-4">
-            <Field label="Full Name">
-              <input className={inp} placeholder="Alice Banda" value={form.name}
-                onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Role">
-                <select className={sel} value={form.role}
-                  onChange={e => setForm(f => ({ ...f, role: e.target.value as StaffRole }))}>
-                  {(Object.entries(ROLE_LABELS) as [StaffRole, string][]).map(([k, v]) => (
-                    <option key={k} value={k}>{v}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Phone">
-                <input className={inp} placeholder="+260971000001" value={form.phone}
-                  onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
-              </Field>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Daily Rate (ZMW)">
-                <input className={inp} type="number" min={0} value={form.dailyRate || ''}
-                  onChange={e => setForm(f => ({ ...f, dailyRate: +e.target.value }))} />
-              </Field>
-              <Field label="Hired Date">
-                <input className={inp} type="date" value={form.hiredDate}
-                  onChange={e => setForm(f => ({ ...f, hiredDate: e.target.value }))} />
-              </Field>
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <button onClick={() => setOpen(false)}
-                className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
-              <button onClick={save}
-                className="px-4 py-2 text-sm bg-violet-600 hover:bg-violet-700 text-white rounded-lg font-medium">
-                Save
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
-    </div>
-  );
-}
-
-// ─── Time Log Tab ─────────────────────────────────────────────────────────────
-
-function TimeLogTab({
-  timeLogs, setTimeLogs, toggleApproved, staff, enterprises, weekOffset, setWeekOffset,
-}: {
-  timeLogs: TimeLog[];
-  setTimeLogs: React.Dispatch<React.SetStateAction<TimeLog[]>>;
-  toggleApproved: (id: string) => void;
-  staff: StaffMember[];
-  enterprises: { id: string; name: string }[];
-  weekOffset: number;
-  setWeekOffset: React.Dispatch<React.SetStateAction<number>>;
-}) {
-  const [open, setOpen] = useState(false);
-  const blank: Omit<TimeLog, 'id'> = {
-    staffId: staff[0]?.id ?? '',
-    enterpriseId: enterprises[0]?.id ?? '',
-    date: new Date().toISOString().slice(0, 10),
-    task: '', hoursWorked: 8, notes: '', approved: false,
-  };
-  const [form, setForm] = useState(blank);
-
-  const { start, end } = getWeekBounds(weekOffset);
-  const weekLogs = timeLogs.filter(l => l.date >= start && l.date <= end)
-    .sort((a, b) => b.date.localeCompare(a.date));
-
-  const totalHours = weekLogs.reduce((s, l) => s + l.hoursWorked, 0);
-  const totalCost  = weekLogs.reduce((s, l) => {
-    const m = staff.find(s => s.id === l.staffId);
-    return s + labourCost(l.hoursWorked, m?.dailyRate ?? 0);
-  }, 0);
-
-  function save() {
-    if (!form.task || !form.date) return;
-    setTimeLogs(prev => [...prev, { ...form, id: uuidv4() }]);
-    setForm(blank);
-    setOpen(false);
-  }
-
-  return (
-    <div className="space-y-4">
-      {/* Week picker */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={() => setWeekOffset(o => o - 1)}
-            className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">&#8249; Prev</button>
-          <span className="text-sm font-medium text-slate-700">{start} — {end}</span>
-          <button onClick={() => setWeekOffset(o => o + 1)}
-            className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Next &#8250;</button>
-          {weekOffset !== 0 && (
-            <button onClick={() => setWeekOffset(0)}
-              className="px-3 py-1.5 text-xs text-violet-600 hover:underline">This week</button>
-          )}
-        </div>
-        <button onClick={() => setOpen(true)}
-          className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-          <Plus className="w-4 h-4" /> Add Time Log
-        </button>
-      </div>
-
-      <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wide">
-            <tr>
-              {['Date','Staff','Enterprise','Task','Hours','Approved','Notes'].map(h => (
-                <th key={h} className="px-4 py-3 text-left font-medium">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {weekLogs.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">No time logs for this week.</td></tr>
-            )}
-            {weekLogs.map(l => {
-              const member = staff.find(s => s.id === l.staffId);
-              const ent    = enterprises.find(e => e.id === l.enterpriseId);
-              return (
-                <tr key={l.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 text-slate-600">{l.date}</td>
-                  <td className="px-4 py-3 font-medium text-slate-800">{member?.name ?? '—'}</td>
-                  <td className="px-4 py-3 text-slate-600">{ent?.name ?? '—'}</td>
-                  <td className="px-4 py-3 text-slate-700">{l.task}</td>
-                  <td className="px-4 py-3 text-slate-600 text-center">{l.hoursWorked}h</td>
-                  <td className="px-4 py-3 text-center">
-                    <button onClick={() => toggleApproved(l.id)}>
-                      {l.approved
-                        ? <CheckCircle2 className="w-5 h-5 text-green-500" />
-                        : <Circle className="w-5 h-5 text-slate-300" />}
-                    </button>
-                  </td>
-                  <td className="px-4 py-3 text-slate-400 text-xs max-w-[140px] truncate" title={l.notes}>{l.notes || '—'}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-          {weekLogs.length > 0 && (
-            <tfoot className="bg-slate-50 font-medium text-sm text-slate-700">
-              <tr>
-                <td colSpan={4} className="px-4 py-3 text-right">Totals</td>
-                <td className="px-4 py-3 text-center">{totalHours}h</td>
-                <td className="px-4 py-3" />
-                <td className="px-4 py-3 text-slate-800">K {totalCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
-              </tr>
-            </tfoot>
-          )}
-        </table>
-      </div>
-
-      {open && (
-        <Modal title="Add Time Log" onClose={() => setOpen(false)}>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Staff Member">
-                <select className={sel} value={form.staffId}
-                  onChange={e => setForm(f => ({ ...f, staffId: e.target.value }))}>
-                  {staff.filter(s => s.active).map(s => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Enterprise">
-                <select className={sel} value={form.enterpriseId}
-                  onChange={e => setForm(f => ({ ...f, enterpriseId: e.target.value }))}>
-                  {enterprises.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-                </select>
-              </Field>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Date">
-                <input className={inp} type="date" value={form.date}
-                  onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
-              </Field>
-              <Field label="Hours Worked">
-                <input className={inp} type="number" min={0} max={24} step={0.5} value={form.hoursWorked || ''}
-                  onChange={e => setForm(f => ({ ...f, hoursWorked: +e.target.value }))} />
-              </Field>
-            </div>
-            <Field label="Task Description">
-              <input className={inp} placeholder="Feeding & watering birds" value={form.task}
-                onChange={e => setForm(f => ({ ...f, task: e.target.value }))} />
-            </Field>
-            <Field label="Notes">
-              <input className={inp} placeholder="Optional notes" value={form.notes}
-                onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
-            </Field>
-            <div className="flex justify-end gap-2 pt-2">
-              <button onClick={() => setOpen(false)}
-                className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
-              <button onClick={save}
-                className="px-4 py-2 text-sm bg-violet-600 hover:bg-violet-700 text-white rounded-lg font-medium">
-                Save
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
-    </div>
-  );
-}
-
-// ─── Labour Cost Tab ──────────────────────────────────────────────────────────
-
-function LabourCostTab({
-  timeLogs, staff, enterprises, weekOffset,
-}: {
-  timeLogs: TimeLog[];
-  staff: StaffMember[];
-  enterprises: { id: string; name: string }[];
-  weekOffset: number;
-}) {
-  const { start, end } = getWeekBounds(weekOffset);
-  const weekLogs = timeLogs.filter(l => l.date >= start && l.date <= end);
-
-  // Cost per enterprise
-  const entCosts = useMemo(() => {
-    return enterprises.map(ent => {
-      const logs = weekLogs.filter(l => l.enterpriseId === ent.id);
-      const hours = logs.reduce((s, l) => s + l.hoursWorked, 0);
-      const cost  = logs.reduce((s, l) => {
-        const m = staff.find(s => s.id === l.staffId);
-        return s + labourCost(l.hoursWorked, m?.dailyRate ?? 0);
-      }, 0);
-      return { ...ent, hours, cost };
-    }).filter(e => e.hours > 0);
-  }, [weekLogs, enterprises, staff]);
-
-  const totalCost  = entCosts.reduce((s, e) => s + e.cost, 0);
-  const totalHours = entCosts.reduce((s, e) => s + e.hours, 0);
-  const avgCostPerHour = totalHours > 0 ? totalCost / totalHours : 0;
-
-  const maxCost = Math.max(...entCosts.map(e => e.cost), 1);
-
-  return (
-    <div className="space-y-6">
-      {/* Summary KPIs */}
-      <div className="grid grid-cols-3 gap-4">
-        <KPI label="Total Labour Cost (Week)" value={`K ${totalCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
-          icon={DollarSign} colour="bg-violet-100 text-violet-600" />
-        <KPI label="Total Hours (Week)" value={`${totalHours}h`}
-          icon={Clock} colour="bg-blue-100 text-blue-600" />
-        <KPI label="Avg Cost / Hour" value={`K ${avgCostPerHour.toFixed(2)}`}
-          icon={Users} colour="bg-green-100 text-green-600" />
-      </div>
-
-      {/* Bar Chart (CSS-only) */}
-      {entCosts.length > 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <h3 className="font-semibold text-slate-800 text-sm mb-4">Labour Cost by Enterprise</h3>
-          <div className="space-y-3">
-            {entCosts.map(e => {
-              const pct = (e.cost / maxCost) * 100;
-              return (
-                <div key={e.id} className="space-y-1">
-                  <div className="flex justify-between text-xs text-slate-600">
-                    <span className="font-medium">{e.name}</span>
-                    <span>K {e.cost.toLocaleString(undefined, { maximumFractionDigits: 0 })} &bull; {e.hours}h</span>
-                  </div>
-                  <div className="h-5 bg-slate-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-violet-500 rounded-full transition-all duration-500"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Enterprise breakdown table */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
-        <div className="px-5 py-4 border-b border-slate-100">
-          <h3 className="font-semibold text-slate-800 text-sm">Enterprise Breakdown — week of {start}</h3>
-        </div>
-        <table className="min-w-full text-sm">
-          <thead className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wide">
-            <tr>
-              {['Enterprise','Hours','Labour Cost','% of Total'].map(h => (
-                <th key={h} className="px-4 py-3 text-left font-medium">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {entCosts.length === 0 && (
-              <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-400">No labour logged for this week.</td></tr>
-            )}
-            {entCosts.map(e => (
-              <tr key={e.id} className="hover:bg-slate-50">
-                <td className="px-4 py-3 font-medium text-slate-800">{e.name}</td>
-                <td className="px-4 py-3 text-slate-600">{e.hours}h</td>
-                <td className="px-4 py-3 text-slate-700">K {e.cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
-                <td className="px-4 py-3 text-slate-500">
-                  {totalCost > 0 ? ((e.cost / totalCost) * 100).toFixed(1) : '0'}%
-                </td>
-              </tr>
-            ))}
-            {entCosts.length > 0 && (
-              <tr className="bg-slate-50 font-semibold text-slate-800">
-                <td className="px-4 py-3">Total</td>
-                <td className="px-4 py-3">{totalHours}h</td>
-                <td className="px-4 py-3">K {totalCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
-                <td className="px-4 py-3">100%</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
-
-type Tab = 'staff' | 'timelog' | 'cost';
-const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
-  { id: 'staff',   label: 'Staff',       icon: Users },
-  { id: 'timelog', label: 'Time Log',    icon: Clock },
-  { id: 'cost',    label: 'Labour Cost', icon: DollarSign },
+const ALL_PERMISSIONS: Permission[] = [
+  { key: 'view_dashboard',    label: 'View Dashboard',       description: 'Access the main farm dashboard',                  group: 'Operations' },
+  { key: 'manage_production', label: 'Manage Production',    description: 'Create and manage production cycles',             group: 'Operations' },
+  { key: 'manage_inventory',  label: 'Manage Inventory',     description: 'Add, edit, remove inventory items',               group: 'Operations' },
+  { key: 'manage_sales',      label: 'Manage Sales',         description: 'Create and manage sales orders',                  group: 'Operations' },
+  { key: 'manage_procurement',label: 'Manage Procurement',   description: 'Create and manage purchase orders',               group: 'Operations' },
+  { key: 'manage_health',     label: 'Animal Health',        description: 'Add vaccination and treatment records',           group: 'Operations' },
+  { key: 'view_finance',      label: 'View Finance',         description: 'See financial transactions and reports',          group: 'Finance' },
+  { key: 'view_reports',      label: 'View Reports',         description: 'Access the reports & analytics module',           group: 'Finance' },
+  { key: 'manage_expenses',   label: 'Log Production Costs', description: 'Enter feed, vet, and production expenses',        group: 'Finance' },
+  { key: 'manage_iot',        label: 'IoT & Sensors',        description: 'Access and control IoT devices and rules',        group: 'IoT & Data' },
+  { key: 'view_activity_log', label: 'Activity Log',         description: 'View the audit trail of all actions',            group: 'IoT & Data' },
+  { key: 'manage_marketplace',label: 'Marketplace',          description: 'Post and manage marketplace listings',            group: 'IoT & Data' },
+  { key: 'manage_staff',      label: 'Manage Staff',         description: 'Add, edit, deactivate employees',                group: 'Administration' },
+  { key: 'manage_settings',   label: 'Farm Settings',        description: 'Change farm configuration and org settings',     group: 'Administration' },
+  { key: 'system_admin',      label: 'System Administrator', description: 'Full access to all modules and settings',        group: 'Administration' },
 ];
+
+const ROLE_DEFAULTS: Record<StaffRole, string[]> = {
+  farmhand:    ['view_dashboard', 'manage_production', 'manage_health'],
+  supervisor:  ['view_dashboard', 'manage_production', 'manage_inventory', 'manage_health', 'view_reports'],
+  driver:      ['view_dashboard', 'manage_procurement'],
+  vet_officer: ['view_dashboard', 'manage_health', 'manage_inventory'],
+  accountant:  ['view_dashboard', 'view_finance', 'view_reports', 'manage_expenses'],
+  manager:     ['view_dashboard', 'manage_production', 'manage_inventory', 'manage_sales', 'manage_procurement', 'manage_health', 'view_finance', 'view_reports', 'manage_expenses', 'view_activity_log'],
+  farm_admin:  ['view_dashboard', 'manage_production', 'manage_inventory', 'manage_sales', 'manage_procurement', 'manage_health', 'view_finance', 'view_reports', 'manage_expenses', 'view_activity_log', 'manage_staff', 'manage_settings', 'manage_iot', 'manage_marketplace'],
+  owner:       ['view_dashboard', 'manage_production', 'manage_inventory', 'manage_sales', 'manage_procurement', 'manage_health', 'view_finance', 'view_reports', 'manage_expenses', 'view_activity_log', 'manage_staff', 'manage_settings', 'manage_iot', 'manage_marketplace', 'system_admin'],
+};
+
+const ROLE_COLORS: Record<StaffRole, string> = {
+  farmhand:   'bg-green-100 text-green-800',
+  supervisor: 'bg-blue-100 text-blue-800',
+  driver:     'bg-slate-100 text-slate-700',
+  vet_officer:'bg-pink-100 text-pink-800',
+  accountant: 'bg-yellow-100 text-yellow-800',
+  manager:    'bg-violet-100 text-violet-800',
+  farm_admin: 'bg-indigo-100 text-indigo-800',
+  owner:      'bg-orange-100 text-orange-800',
+};
+
+const AVATAR_COLORS: Record<StaffRole, string> = {
+  farmhand:   'bg-green-500',
+  supervisor: 'bg-blue-500',
+  driver:     'bg-slate-400',
+  vet_officer:'bg-pink-500',
+  accountant: 'bg-yellow-500',
+  manager:    'bg-violet-500',
+  farm_admin: 'bg-indigo-500',
+  owner:      'bg-orange-500',
+};
+
+const STAFF_KEY = 'agronexus_v2_hr_staff';
+
+function seedEmployees(): Employee[] {
+  return [
+    { id: uuidv4(), name: 'Alice Banda',  role: 'farmhand',   email: 'alice@farm.zam',  phone: '+260971000001', hiredDate: '2023-03-15', active: true, enterpriseIds: [], permissions: ROLE_DEFAULTS.farmhand },
+    { id: uuidv4(), name: 'Bob Mwale',    role: 'supervisor', email: 'bob@farm.zam',    phone: '+260971000002', hiredDate: '2022-07-01', active: true, enterpriseIds: [], permissions: ROLE_DEFAULTS.supervisor },
+    { id: uuidv4(), name: 'Carol Phiri',  role: 'manager',    email: 'carol@farm.zam',  phone: '+260971000003', hiredDate: '2024-01-10', active: true, enterpriseIds: [], permissions: ROLE_DEFAULTS.manager },
+  ];
+}
+
+function initials(name: string) {
+  const parts = name.trim().split(' ');
+  return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase();
+}
+
+const GROUPS: Permission['group'][] = ['Operations', 'Finance', 'IoT & Data', 'Administration'];
+
+const BLANK_FORM = { name: '', role: 'farmhand' as StaffRole, email: '', phone: '', hiredDate: '', active: true, enterpriseIds: [] as string[] };
 
 export default function StaffLabour() {
   const { org } = useOrg();
-  const enterprises = org?.enterprises ?? [];
-  const firstId = enterprises[0]?.id ?? null;
 
-  const { staff, setStaff, timeLogs, setTimeLogs, toggleApproved, toggleActive } = useHR(firstId);
-  const [tab, setTab]           = useState<Tab>('staff');
-  const [weekOffset, setWeekOffset] = useState(0);
+  const [employees, setEmployees] = useState<Employee[]>(() => {
+    try {
+      const raw = localStorage.getItem(STAFF_KEY);
+      if (raw) { const parsed = JSON.parse(raw); if (parsed.length) return parsed; }
+    } catch {}
+    const seed = seedEmployees();
+    localStorage.setItem(STAFF_KEY, JSON.stringify(seed));
+    return seed;
+  });
+
+  const [tab, setTab] = useState<'directory' | 'permissions'>('directory');
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [form, setForm] = useState(BLANK_FORM);
+  const [formPerms, setFormPerms] = useState<string[]>([]);
+  const [savedFlash, setSavedFlash] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+
+  function saveEmployees(list: Employee[]) {
+    setEmployees(list);
+    localStorage.setItem(STAFF_KEY, JSON.stringify(list));
+  }
+
+  function openAdd() {
+    setEditingId(null);
+    setForm(BLANK_FORM);
+    setFormPerms(ROLE_DEFAULTS.farmhand);
+    setShowForm(true);
+  }
+
+  function openEdit(emp: Employee) {
+    setEditingId(emp.id);
+    setForm({ name: emp.name, role: emp.role, email: emp.email, phone: emp.phone, hiredDate: emp.hiredDate, active: emp.active, enterpriseIds: emp.enterpriseIds });
+    setFormPerms(emp.permissions);
+    setShowForm(true);
+  }
+
+  function handleRoleChange(role: StaffRole) {
+    setForm(f => ({ ...f, role }));
+    setFormPerms(ROLE_DEFAULTS[role]);
+  }
+
+  function handleSaveForm() {
+    if (!form.name.trim()) return;
+    if (editingId) {
+      saveEmployees(employees.map(e => e.id === editingId ? { ...e, ...form, permissions: formPerms } : e));
+    } else {
+      saveEmployees([...employees, { id: uuidv4(), ...form, permissions: formPerms }]);
+    }
+    setShowForm(false);
+  }
+
+  function toggleActive(id: string) {
+    saveEmployees(employees.map(e => e.id === id ? { ...e, active: !e.active } : e));
+  }
+
+  function deleteEmployee(id: string) {
+    saveEmployees(employees.filter(e => e.id !== id));
+    setDeleteConfirm(null);
+    if (selectedId === id) setSelectedId(null);
+  }
+
+  function openPermissions(emp: Employee) {
+    setSelectedId(emp.id);
+    setTab('permissions');
+  }
+
+  const selectedEmp = employees.find(e => e.id === selectedId) ?? null;
+
+  function togglePermission(key: string) {
+    if (!selectedEmp) return;
+    const has = selectedEmp.permissions.includes(key);
+    const next = has ? selectedEmp.permissions.filter(k => k !== key) : [...selectedEmp.permissions, key];
+    saveEmployees(employees.map(e => e.id === selectedEmp.id ? { ...e, permissions: next } : e));
+  }
+
+  function resetToDefaults() {
+    if (!selectedEmp) return;
+    saveEmployees(employees.map(e => e.id === selectedEmp.id ? { ...e, permissions: ROLE_DEFAULTS[e.role] } : e));
+  }
+
+  function flashSave() {
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 2000);
+  }
+
+  const enterprises = (org as any)?.enterprises ?? [];
+  const activeCount = employees.filter(e => e.active).length;
+  const roleSet = new Set(employees.map(e => e.role));
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="p-2 bg-blue-100 rounded-xl">
-          <Users className="w-6 h-6 text-blue-600" />
-        </div>
-        <div>
-          <h1 className="text-xl font-bold text-slate-800">Staff &amp; Labour</h1>
-          <p className="text-sm text-slate-500">Daily task allocation, time logs &amp; cost attribution</p>
-        </div>
-      </div>
-
-      {enterprises.length === 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-700">
-          No enterprises configured. Add an enterprise in Onboarding to link time logs.
-        </div>
-      )}
-
+    <div className="p-6 space-y-6">
       {/* Tabs */}
-      <div className="flex gap-1 bg-white border border-slate-200 rounded-xl p-1 w-fit">
-        {TABS.map(t => {
-          const Icon = t.icon;
-          return (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors
-                ${tab === t.id ? 'bg-violet-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}
-            >
-              <Icon className="w-4 h-4" />
-              {t.label}
-            </button>
-          );
-        })}
+      <div className="flex gap-2 border-b border-slate-200">
+        {(['directory', 'permissions'] as const).map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            className={`px-4 py-2 text-sm font-medium capitalize border-b-2 transition-colors ${tab === t ? 'border-violet-600 text-violet-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+            {t === 'directory' ? <><Users className="inline w-4 h-4 mr-1" />Directory</> : <><Shield className="inline w-4 h-4 mr-1" />Roles & Permissions</>}
+          </button>
+        ))}
       </div>
 
-      {/* Tab Content */}
-      {tab === 'staff' && (
-        <StaffTab staff={staff} setStaff={setStaff} toggleActive={toggleActive} />
+      {/* ── Tab 1: Directory ── */}
+      {tab === 'directory' && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2"><Users className="w-5 h-5 text-violet-600" />People & Access</h2>
+            <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-full">{employees.length} employees</span>
+            <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">{activeCount} active</span>
+            <span className="text-xs bg-violet-100 text-violet-700 px-2 py-1 rounded-full">{roleSet.size} roles</span>
+            <button onClick={openAdd} className="ml-auto flex items-center gap-1 bg-violet-600 hover:bg-violet-700 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
+              <Plus className="w-4 h-4" /> Add Employee
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {employees.map(emp => (
+              <div key={emp.id} className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className={`w-10 h-10 rounded-full ${AVATAR_COLORS[emp.role]} flex items-center justify-center text-white text-sm font-bold flex-shrink-0`}>{initials(emp.name)}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-slate-800">{emp.name}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ROLE_COLORS[emp.role]}`}>{emp.role.replace('_', ' ')}</span>
+                      {!emp.active && <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">Inactive</span>}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">{emp.email} · {emp.phone}</p>
+                    <p className="text-xs text-slate-400">Hired {emp.hiredDate}</p>
+                  </div>
+                  <button onClick={() => toggleActive(emp.id)} title={emp.active ? 'Deactivate' : 'Activate'} className="text-slate-400 hover:text-slate-600 transition-colors">
+                    {emp.active ? <ToggleRight className="w-6 h-6 text-green-500" /> : <ToggleLeft className="w-6 h-6" />}
+                  </button>
+                </div>
+
+                {enterprises.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {emp.enterpriseIds.length === 0
+                      ? <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">All enterprises</span>
+                      : emp.enterpriseIds.map((eid: string) => {
+                          const ent = enterprises.find((e: any) => e.id === eid);
+                          return <span key={eid} className="text-xs bg-violet-50 text-violet-700 px-2 py-0.5 rounded-full">{ent?.name ?? eid}</span>;
+                        })}
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+                  <button onClick={() => openEdit(emp)} className="flex items-center gap-1 text-xs text-slate-600 hover:text-violet-700 transition-colors px-2 py-1 rounded hover:bg-violet-50">
+                    <Edit2 className="w-3 h-3" /> Edit
+                  </button>
+                  <button onClick={() => openPermissions(emp)} className="flex items-center gap-1 text-xs text-slate-600 hover:text-violet-700 transition-colors px-2 py-1 rounded hover:bg-violet-50">
+                    <Key className="w-3 h-3" /> Permissions
+                  </button>
+                  <button onClick={() => setDeleteConfirm(emp.id)} className="ml-auto flex items-center gap-1 text-xs text-red-500 hover:text-red-700 transition-colors px-2 py-1 rounded hover:bg-red-50">
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+
+                {deleteConfirm === emp.id && (
+                  <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg p-2 text-xs text-red-700">
+                    <span>Remove {emp.name}?</span>
+                    <button onClick={() => deleteEmployee(emp.id)} className="font-medium hover:underline">Yes</button>
+                    <button onClick={() => setDeleteConfirm(null)} className="font-medium hover:underline">No</button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
       )}
-      {tab === 'timelog' && (
-        <TimeLogTab
-          timeLogs={timeLogs}
-          setTimeLogs={setTimeLogs}
-          toggleApproved={toggleApproved}
-          staff={staff}
-          enterprises={enterprises}
-          weekOffset={weekOffset}
-          setWeekOffset={setWeekOffset}
-        />
+
+      {/* ── Tab 2: Roles & Permissions ── */}
+      {tab === 'permissions' && (
+        <div className="flex gap-4 h-[calc(100vh-220px)] min-h-[480px]">
+          {/* Sidebar */}
+          <div className="w-1/3 bg-white border border-slate-200 rounded-xl overflow-y-auto">
+            <div className="p-3 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase tracking-wide">Employees</div>
+            {employees.map(emp => (
+              <button key={emp.id} onClick={() => setSelectedId(emp.id)}
+                className={`w-full text-left px-4 py-3 flex items-center gap-3 border-b border-slate-50 transition-colors ${selectedId === emp.id ? 'bg-violet-50 border-l-2 border-l-violet-500' : 'hover:bg-slate-50'}`}>
+                <div className={`w-8 h-8 rounded-full ${AVATAR_COLORS[emp.role]} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>{initials(emp.name)}</div>
+                <div>
+                  <div className="text-sm font-medium text-slate-800">{emp.name}</div>
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full ${ROLE_COLORS[emp.role]}`}>{emp.role.replace('_', ' ')}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* Permission panel */}
+          <div className="flex-1 bg-white border border-slate-200 rounded-xl overflow-y-auto flex flex-col">
+            {!selectedEmp ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-slate-400 gap-2">
+                <UserCheck className="w-10 h-10" />
+                <p className="text-sm">Select an employee to manage their permissions</p>
+              </div>
+            ) : (
+              <div className="p-5 space-y-5 flex-1">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className={`w-10 h-10 rounded-full ${AVATAR_COLORS[selectedEmp.role]} flex items-center justify-center text-white font-bold`}>{initials(selectedEmp.name)}</div>
+                  <div>
+                    <div className="font-semibold text-slate-800">{selectedEmp.name}</div>
+                    <div className="flex gap-2 mt-0.5">
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${ROLE_COLORS[selectedEmp.role]}`}>{selectedEmp.role.replace('_', ' ')}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${selectedEmp.active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>{selectedEmp.active ? 'Active' : 'Inactive'}</span>
+                    </div>
+                  </div>
+                  <button onClick={resetToDefaults} className="ml-auto flex items-center gap-1 text-xs border border-slate-300 px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors">
+                    <Shield className="w-3 h-3" /> Reset to role defaults
+                  </button>
+                </div>
+
+                {GROUPS.map(group => {
+                  const perms = ALL_PERMISSIONS.filter(p => p.group === group);
+                  return (
+                    <div key={group}>
+                      <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">{group}</div>
+                      <div className="space-y-1">
+                        {perms.map(perm => {
+                          const has = selectedEmp.permissions.includes(perm.key);
+                          return (
+                            <div key={perm.key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 transition-colors">
+                              <button onClick={() => togglePermission(perm.key)} className="flex-shrink-0">
+                                {has ? <CheckCircle className="w-5 h-5 text-green-500" /> : <XCircle className="w-5 h-5 text-red-400" />}
+                              </button>
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium text-slate-700">{perm.label}</span>
+                                  {perm.key === 'system_admin' && has && (
+                                    <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">Grants full access to all modules</span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-slate-500">{perm.description}</p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                <div className="pt-4 border-t border-slate-100 flex items-center gap-3">
+                  <button onClick={flashSave} className="bg-violet-600 hover:bg-violet-700 text-white text-sm px-4 py-2 rounded-lg transition-colors">
+                    Save Permissions
+                  </button>
+                  {savedFlash && <span className="text-sm text-green-600 flex items-center gap-1"><CheckCircle className="w-4 h-4" /> Permissions saved</span>}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
-      {tab === 'cost' && (
-        <LabourCostTab
-          timeLogs={timeLogs}
-          staff={staff}
-          enterprises={enterprises}
-          weekOffset={weekOffset}
-        />
+
+      {/* ── Add/Edit Modal ── */}
+      {showForm && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-slate-800">{editingId ? 'Edit Employee' : 'Add Employee'}</h3>
+              <button onClick={() => setShowForm(false)}><X className="w-5 h-5 text-slate-400 hover:text-slate-600" /></button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-slate-600">Full Name</label>
+                <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-violet-400" placeholder="e.g. Alice Banda" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600">Role</label>
+                <select value={form.role} onChange={e => handleRoleChange(e.target.value as StaffRole)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-violet-400">
+                  {(Object.keys(ROLE_DEFAULTS) as StaffRole[]).map(r => <option key={r} value={r}>{r.replace('_', ' ')}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-slate-600">Email</label>
+                  <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-violet-400" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-600">Phone</label>
+                  <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-violet-400" />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600">Hired Date</label>
+                <input type="date" value={form.hiredDate} onChange={e => setForm(f => ({ ...f, hiredDate: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-violet-400" />
+              </div>
+              {enterprises.length > 0 && (
+                <div>
+                  <label className="text-xs font-medium text-slate-600">Enterprise Access <span className="text-slate-400">(none = all)</span></label>
+                  <div className="mt-1 space-y-1">
+                    {enterprises.map((ent: any) => (
+                      <label key={ent.id} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                        <input type="checkbox" checked={form.enterpriseIds.includes(ent.id)}
+                          onChange={e => setForm(f => ({ ...f, enterpriseIds: e.target.checked ? [...f.enterpriseIds, ent.id] : f.enterpriseIds.filter(id => id !== ent.id) }))} />
+                        {ent.name}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                <input type="checkbox" checked={form.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} />
+                Active employee
+              </label>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button onClick={handleSaveForm} className="flex-1 bg-violet-600 hover:bg-violet-700 text-white text-sm py-2 rounded-lg transition-colors font-medium">
+                {editingId ? 'Save Changes' : 'Add Employee'}
+              </button>
+              <button onClick={() => setShowForm(false)} className="flex-1 border border-slate-200 text-slate-600 text-sm py-2 rounded-lg hover:bg-slate-50 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
