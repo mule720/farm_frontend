@@ -196,10 +196,17 @@ function PondCard({ pond, onAerator, onSelect, selected }: {
   const cfg = STATUS_CFG[pond.status];
   const doSt = paramStatus('do_mgl', pond.do_mgl);
   const nhSt = paramStatus('ammoniaMgl', pond.ammoniaMgl);
-  const fcr = pond.currentBiomassKg > 0
-    ? ((pond.stockedCount * 50 / 1000) / pond.currentBiomassKg * pond.stockedCount / pond.stockedCount).toFixed(1)
+  let fcr: string;
+  if (pond.currentBiomassKg > 0 && pond.ageWeeks > 0) {
+    const estimatedFeedKg = pond.currentBiomassKg * 0.03 * pond.ageWeeks * 7;
+    const weightGainKg = Math.max(0.1, pond.currentBiomassKg - pond.stockedCount * 0.005);
+    fcr = (estimatedFeedKg / weightGainKg).toFixed(2);
+  } else {
+    fcr = '—';
+  }
+  const survivalPct = pond.stockedCount > 0
+    ? Math.min(100, Math.round((pond.currentBiomassKg * 1000 / pond.targetWeightG / pond.stockedCount) * 100)).toFixed(0)
     : '—';
-  const survivalPct = ((pond.stockedCount / pond.stockedCount) * 100).toFixed(0);
   const dailyFeedKg = (pond.currentBiomassKg * 0.03).toFixed(1);
 
   return (
@@ -268,13 +275,18 @@ function PondCard({ pond, onAerator, onSelect, selected }: {
 
 // ─── DO Trend chart (simulated 24h sparkline) ─────────────────────────────────
 
+function seededRand(seed: number): number {
+  const x = Math.sin(seed + 1) * 10000;
+  return x - Math.floor(x);
+}
+
 function DOTrendChart({ pond }: { pond: Pond }) {
   const points = useMemo(() => {
     const base = pond.do_mgl;
     return Array.from({ length: 24 }, (_, i) => {
       const h = i;
       const nightBoost = (h < 6 || h > 20) ? -0.5 : 0.3;
-      const v = Math.max(1, Math.min(12, base + nightBoost + (Math.random() - 0.5) * 1.2));
+      const v = Math.max(1, Math.min(12, base + nightBoost + (seededRand(i * 137 + pond.do_mgl * 100) - 0.5) * 1.2));
       return parseFloat(v.toFixed(2));
     });
   }, [pond.id, pond.do_mgl]);

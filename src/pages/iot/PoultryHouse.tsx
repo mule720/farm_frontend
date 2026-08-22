@@ -492,7 +492,7 @@ export default function PoultryHouseDashboard() {
                 { label:'Eggs This Week', value:selected.eggsThisWeek.toLocaleString(), sub:`${Math.round(selected.eggsThisWeek/7)} avg/day`, icon:'📦' },
               ] : [
                 { label:'Live Weight', value:`${(selected.currentBirds * 2.1 / 1000).toFixed(0)} t`, sub:`~2.1kg avg at ${selected.ageWeeks}wk`, icon:'⚖️' },
-                { label:'FCR (est.)', value:'1.85', sub:'Target: < 1.90', icon:'📊' },
+                { label:'FCR (est.)', value: (() => { const totalFeedKg = feedLog.filter(r => r.houseId === selected.id).reduce((s, r) => s + r.feedKg, 0); const estimatedWeightGainKg = selected.currentBirds * 2.1; return totalFeedKg > 0 && estimatedWeightGainKg > 0 ? (totalFeedKg / estimatedWeightGainKg).toFixed(2) : '—'; })(), sub:'Target: < 1.90', icon:'📊' },
               ]),
             ].map((s: any) => (
               <div key={s.label} className={`bg-white rounded-xl border p-4 ${s.warn ? 'border-red-200 bg-red-50' : 'border-slate-200'}`}>

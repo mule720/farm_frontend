@@ -642,7 +642,7 @@ function OutputsTab({ batch, recipe, onUpdate }: { batch: ProcessingBatch; recip
 // ─── Quality Tab ──────────────────────────────────────────────────────────────
 function QualityTab({ batch, onUpdate }: { batch: ProcessingBatch; onUpdate: (p: Partial<ProcessingBatch>) => void }) {
   const [status, setStatus] = useState<'pass' | 'fail' | 'pending'>(batch.qualityStatus ?? 'pending');
-  const [notes, setNotes] = useState('');
+  const [notes, setNotes] = useState(batch.notes ?? '');
 
   return (
     <div className="space-y-4 max-w-md">
@@ -666,7 +666,7 @@ function QualityTab({ batch, onUpdate }: { batch: ProcessingBatch; onUpdate: (p:
             placeholder="Colour, texture, taste, lab results, certifications..."
             className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none" />
         </div>
-        <button onClick={() => onUpdate({ qualityStatus: status })}
+        <button onClick={() => onUpdate({ qualityStatus: status, notes: notes || batch.notes })}
           className="w-full py-2.5 bg-purple-600 text-white rounded-xl text-sm font-medium hover:bg-purple-700">
           Save QC Result
         </button>

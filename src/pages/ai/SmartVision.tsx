@@ -11,7 +11,6 @@ import {
   Hash, ArrowDown, ArrowUp, Minus, Radio, Navigation,
 } from 'lucide-react';
 import { useOrg } from '@/store/orgStore';
-import { getTemplate } from '@/lib/templates';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

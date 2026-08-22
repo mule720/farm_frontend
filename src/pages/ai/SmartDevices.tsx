@@ -7,7 +7,6 @@ import {
   X, Gauge, Eye, Navigation, Signal, SignalHigh, SignalLow,
 } from 'lucide-react';
 import { useOrg } from '@/store/orgStore';
-import { getTemplate } from '@/lib/templates';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

@@ -3,13 +3,16 @@
 // Cross-module analytics: production KPIs, financial trends, cycle comparisons
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useState, useMemo } from 'react';
-import { BarChart3, TrendingUp, TrendingDown, Activity, Package, DollarSign } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Activity, Package, DollarSign, Download } from 'lucide-react';
 import { useOrg } from '@/store/orgStore';
 import { getTemplate } from '@/lib/templates';
+import { exportCSV } from '@/lib/exportUtils';
 
 export default function ReportsEngine() {
   const { org, cycles } = useOrg();
   const [section, setSection] = useState<'production' | 'cycles' | 'overview'>('overview');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   // Pull finance & inventory stats from localStorage
   const txs: any[] = useMemo(() => {
@@ -25,10 +28,17 @@ export default function ReportsEngine() {
     try { return JSON.parse(localStorage.getItem('agronexus_v2_batches') ?? '[]'); } catch { return []; }
   }, []);
 
-  const totalIncome  = txs.filter(t => t.type === 'income').reduce((s: number, t: any) => s + t.amount, 0);
-  const totalExpense = txs.filter(t => t.type === 'expense').reduce((s: number, t: any) => s + t.amount, 0);
+  const filteredTxs = txs.filter(t => {
+    if (dateFrom && t.date < dateFrom) return false;
+    if (dateTo && t.date > dateTo) return false;
+    return true;
+  });
+
+  const totalIncome  = filteredTxs.filter(t => t.type === 'income').reduce((s: number, t: any) => s + t.amount, 0);
+  const totalExpense = filteredTxs.filter(t => t.type === 'expense').reduce((s: number, t: any) => s + t.amount, 0);
   const profit       = totalIncome - totalExpense;
   const orderRevenue = orders.filter((o: any) => o.status !== 'cancelled').reduce((s: number, o: any) => s + o.total, 0);
+
 
   const completedCycles = cycles.filter(c => c.status === 'completed');
   const activeCycles    = cycles.filter(c => c.status === 'active');
@@ -46,13 +56,26 @@ export default function ReportsEngine() {
     <div className="flex flex-col h-full overflow-hidden">
       <div className="bg-white border-b border-slate-200 px-5 py-4 flex-shrink-0">
         <h2 className="font-bold text-slate-900 mb-3">Reports & Analytics</h2>
-        <div className="flex gap-1">
-          {(['overview', 'production', 'cycles'] as const).map(s => (
-            <button key={s} onClick={() => setSection(s)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg capitalize ${section === s ? 'bg-violet-600 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
-              {s}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex gap-1">
+            {(['overview', 'production', 'cycles'] as const).map(s => (
+              <button key={s} onClick={() => setSection(s)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg capitalize ${section === s ? 'bg-violet-600 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
+                {s}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5 ml-auto text-xs text-slate-500">
+            <span>From</span>
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+              className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-violet-400" />
+            <span>To</span>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+              className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-violet-400" />
+            {(dateFrom || dateTo) && (
+              <button onClick={() => { setDateFrom(''); setDateTo(''); }} className="text-slate-400 hover:text-slate-600 px-1">✕</button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -137,8 +160,12 @@ export default function ReportsEngine() {
 
                 {/* Per-cycle summary table */}
                 <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-slate-100">
+                  <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
                     <h4 className="text-sm font-semibold text-slate-800">All Cycles</h4>
+                    <button onClick={() => exportCSV('production-cycles.csv', cycles.map(c => ({ cycle: c.cycleNumber, enterprise: org?.enterprises.find(e=>e.id===c.enterpriseId)?.name??'—', status: c.status, stages: c.stages.length, events: c.stages.flatMap(s=>s.events).length })))}
+                      className="flex items-center gap-1 text-xs text-slate-500 hover:text-violet-600 border border-slate-200 rounded-lg px-2 py-1">
+                      <Download className="w-3 h-3" /> CSV
+                    </button>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
@@ -184,8 +211,17 @@ export default function ReportsEngine() {
               </div>
             ) : (
               <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                <div className="px-4 py-3 border-b border-slate-100">
+                <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
                   <h4 className="text-sm font-semibold text-slate-800">Completed Cycles Comparison</h4>
+                  <button onClick={() => exportCSV('completed-cycles.csv', completedCycles.map(c => {
+                    const ent = org?.enterprises.find(e => e.id === c.enterpriseId);
+                    const days = c.endDate ? Math.round((new Date(c.endDate).getTime() - new Date(c.startDate).getTime()) / 86400000) : null;
+                    const cRev = filteredTxs.filter(t => t.cycleId === c.id && t.type === 'income').reduce((s: number, t: any) => s + t.amount, 0);
+                    const cExp = filteredTxs.filter(t => t.cycleId === c.id && t.type === 'expense').reduce((s: number, t: any) => s + t.amount, 0);
+                    return { cycle: c.cycleNumber, enterprise: ent?.name ?? '—', duration_days: days ?? '—', events: c.stages.flatMap(s => s.events).length, records: c.stages.flatMap(s => s.dailyRecords).length, revenue: cRev, expenses: cExp, profit: cRev - cExp };
+                  }))} className="flex items-center gap-1 text-xs text-slate-500 hover:text-violet-600 border border-slate-200 rounded-lg px-2 py-1">
+                    <Download className="w-3 h-3" /> CSV
+                  </button>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
@@ -195,6 +231,9 @@ export default function ReportsEngine() {
                       <th className="text-right px-4 py-2.5">Duration</th>
                       <th className="text-right px-4 py-2.5">Events</th>
                       <th className="text-right px-4 py-2.5">Records</th>
+                      <th className="text-right px-4 py-2.5">Revenue</th>
+                      <th className="text-right px-4 py-2.5">Expenses</th>
+                      <th className="text-right px-4 py-2.5">Profit</th>
                     </tr></thead>
                     <tbody>
                       {completedCycles.map(c => {
@@ -202,6 +241,9 @@ export default function ReportsEngine() {
                         const days = c.endDate ? Math.round((new Date(c.endDate).getTime() - new Date(c.startDate).getTime()) / 86400000) : null;
                         const events = c.stages.flatMap(s => s.events).length;
                         const records = c.stages.flatMap(s => s.dailyRecords).length;
+                        const cRev = filteredTxs.filter(t => t.cycleId === c.id && t.type === 'income').reduce((s: number, t: any) => s + t.amount, 0);
+                        const cExp = filteredTxs.filter(t => t.cycleId === c.id && t.type === 'expense').reduce((s: number, t: any) => s + t.amount, 0);
+                        const cProfit = cRev - cExp;
                         return (
                           <tr key={c.id} className="border-t border-slate-100">
                             <td className="px-4 py-2.5 font-medium text-slate-800">#{c.cycleNumber}</td>
@@ -209,6 +251,9 @@ export default function ReportsEngine() {
                             <td className="px-4 py-2.5 text-right text-slate-600">{days != null ? `${days}d` : '—'}</td>
                             <td className="px-4 py-2.5 text-right text-slate-600">{events}</td>
                             <td className="px-4 py-2.5 text-right text-slate-600">{records}</td>
+                            <td className="px-4 py-2.5 text-right text-green-600">{cRev > 0 ? `ZMW ${cRev.toLocaleString(undefined,{maximumFractionDigits:0})}` : '—'}</td>
+                            <td className="px-4 py-2.5 text-right text-red-500">{cExp > 0 ? `ZMW ${cExp.toLocaleString(undefined,{maximumFractionDigits:0})}` : '—'}</td>
+                            <td className={`px-4 py-2.5 text-right font-medium ${cProfit >= 0 ? 'text-green-700' : 'text-red-600'}`}>{(cRev > 0 || cExp > 0) ? `ZMW ${cProfit.toLocaleString(undefined,{maximumFractionDigits:0})}` : '—'}</td>
                           </tr>
                         );
                       })}

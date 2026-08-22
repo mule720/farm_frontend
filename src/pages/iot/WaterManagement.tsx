@@ -456,6 +456,8 @@ export default function WaterManagement() {
 
   const [showAddTank,  setAddTank]  = useState(false);
   const [showAddRule,  setAddRule]  = useState(false);
+  const [editingTankId, setEditingTankId] = useState<string | null>(null);
+  const [editLitres, setEditLitres] = useState('');
   const [addPumpForm,  setAddPumpForm]  = useState(false);
   const [addValveForm, setAddValveForm] = useState(false);
   const [pumpF, setPumpF] = useState({ name:'', linkedTankId:'', flowLpm:'80', powerW:'1500' });
@@ -651,15 +653,27 @@ export default function WaterManagement() {
             {tanks.map(t => (
               <div key={t.id}>
                 <TankGauge tank={t} />
-                <div className="flex gap-1 mt-1.5">
-                  <button onClick={() => {
-                    const litres = parseInt(prompt('Set current litres:') ?? '') || 0;
-                    if (litres >= 0) { const n = tanks.map(tk => tk.id===t.id ? {...tk, currentL: Math.min(litres, tk.capacityL), lastRefilled: new Date().toISOString()} : tk); save(LS.TANKS, setTanks, n); }
-                  }} className="flex-1 text-xs border border-slate-200 rounded-lg py-1.5 hover:bg-slate-50 text-slate-600">Update Level</button>
-                  <button onClick={() => { if(confirm(`Delete "${t.name}"?`)) { const n = tanks.filter(tk => tk.id !== t.id); save(LS.TANKS, setTanks, n); } }} className="p-1.5 text-slate-300 hover:text-red-500 border border-slate-200 rounded-lg">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                {editingTankId === t.id ? (
+                  <div className="flex gap-1 mt-1.5">
+                    <input type="number" value={editLitres} onChange={e => setEditLitres(e.target.value)}
+                      className="flex-1 text-xs border border-blue-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                      placeholder={`0–${t.capacityL}`} min={0} max={t.capacityL} autoFocus />
+                    <button onClick={() => {
+                      const litres = parseInt(editLitres) || 0;
+                      if (litres >= 0) { const n = tanks.map(tk => tk.id===t.id ? {...tk, currentL: Math.min(litres, tk.capacityL), lastRefilled: new Date().toISOString()} : tk); save(LS.TANKS, setTanks, n); }
+                      setEditingTankId(null); setEditLitres('');
+                    }} className="text-xs px-2 py-1.5 bg-blue-600 text-white rounded-lg">✓</button>
+                    <button onClick={() => { setEditingTankId(null); setEditLitres(''); }} className="text-xs px-2 py-1.5 border border-slate-200 rounded-lg">✕</button>
+                  </div>
+                ) : (
+                  <div className="flex gap-1 mt-1.5">
+                    <button onClick={() => { setEditingTankId(t.id); setEditLitres(String(t.currentL)); }}
+                      className="flex-1 text-xs border border-slate-200 rounded-lg py-1.5 hover:bg-slate-50 text-slate-600">Update Level</button>
+                    <button onClick={() => { if(window.confirm(`Delete "${t.name}"?`)) { const n = tanks.filter(tk => tk.id !== t.id); save(LS.TANKS, setTanks, n); } }} className="p-1.5 text-slate-300 hover:text-red-500 border border-slate-200 rounded-lg">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

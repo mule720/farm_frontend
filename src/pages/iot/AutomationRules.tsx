@@ -548,11 +548,93 @@ export default function AutomationRules() {
     sv(rules.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r));
   }
 
+  function executeAction(action: Action): string {
+    try {
+      const t = action.type;
+      const target = action.target.toLowerCase();
+
+      // ── Water Management: pumps ──────────────────────────────────────────────
+      if (t === 'start_pump' || t === 'stop_pump') {
+        const pumps: any[] = JSON.parse(localStorage.getItem('agronexus_v2_wm_pumps') ?? '[]');
+        const updated = pumps.map(p =>
+          p.name?.toLowerCase().includes(target) || target === 'all'
+            ? { ...p, status: t === 'start_pump' ? 'on' : 'off' }
+            : p
+        );
+        localStorage.setItem('agronexus_v2_wm_pumps', JSON.stringify(updated));
+        const changed = updated.filter((_p, i) => updated[i].status !== pumps[i]?.status).length;
+        return `${t === 'start_pump' ? 'Started' : 'Stopped'} ${changed || 'matching'} pump(s)`;
+      }
+
+      // ── Water Management: valves ─────────────────────────────────────────────
+      if (t === 'open_valve' || t === 'close_valve') {
+        const valves: any[] = JSON.parse(localStorage.getItem('agronexus_v2_wm_valves') ?? '[]');
+        const updated = valves.map(v =>
+          v.name?.toLowerCase().includes(target) || target === 'all'
+            ? { ...v, status: t === 'open_valve' ? 'open' : 'closed' }
+            : v
+        );
+        localStorage.setItem('agronexus_v2_wm_valves', JSON.stringify(updated));
+        return `${t === 'open_valve' ? 'Opened' : 'Closed'} matching valve(s)`;
+      }
+
+      // ── Aquaculture: aerators ────────────────────────────────────────────────
+      if (t === 'start_aerator' || t === 'stop_aerator') {
+        const ponds: any[] = JSON.parse(localStorage.getItem('agronexus_v2_aqua_ponds') ?? '[]');
+        const updated = ponds.map(p =>
+          p.name?.toLowerCase().includes(target) || target === 'all'
+            ? { ...p, aeratorOn: t === 'start_aerator' }
+            : p
+        );
+        localStorage.setItem('agronexus_v2_aqua_ponds', JSON.stringify(updated));
+        return `${t === 'start_aerator' ? 'Started' : 'Stopped'} aerator on matching pond(s)`;
+      }
+
+      // ── Poultry: fans / heaters ──────────────────────────────────────────────
+      if (t === 'start_fan' || t === 'stop_fan' || t === 'start_heater' || t === 'stop_heater') {
+        const houses: any[] = JSON.parse(localStorage.getItem('agronexus_v2_ph_houses') ?? '[]');
+        const isFan = t.includes('fan');
+        const isOn  = t.startsWith('start');
+        const updated = houses.map(h =>
+          h.name?.toLowerCase().includes(target) || target === 'all'
+            ? isFan
+              ? { ...h, fanSpeedPct: isOn ? 80 : 0 }
+              : { ...h, heaterOn: isOn }
+            : h
+        );
+        localStorage.setItem('agronexus_v2_ph_houses', JSON.stringify(updated));
+        return `${isOn ? 'Started' : 'Stopped'} ${isFan ? 'fan' : 'heater'} on matching house(s)`;
+      }
+
+      // ── Energy: generators ───────────────────────────────────────────────────
+      if (t === 'start_generator' || t === 'stop_generator') {
+        const gens: any[] = JSON.parse(localStorage.getItem('agronexus_v2_em_generator') ?? '[]');
+        const updated = gens.map(g =>
+          g.name?.toLowerCase().includes(target) || target === 'all'
+            ? { ...g, status: t === 'start_generator' ? 'running' : 'idle' }
+            : g
+        );
+        localStorage.setItem('agronexus_v2_em_generator', JSON.stringify(updated));
+        return `${t === 'start_generator' ? 'Started' : 'Stopped'} matching generator(s)`;
+      }
+
+      // ── Log event ────────────────────────────────────────────────────────────
+      if (t === 'log_event') return `Event logged: ${action.label}`;
+      if (t === 'send_alert') return `Alert queued: ${action.target}`;
+
+      return `Action ${t} executed on ${action.target}`;
+    } catch (err) {
+      return `Error: ${String(err)}`;
+    }
+  }
+
   function simulateRun(id: string) {
     sv(rules.map(r => {
       if (r.id !== id) return r;
-      const logEntry = { ts: new Date().toISOString(), result:'success' as const, note:`Manually triggered — ${r.actions.length} action${r.actions.length>1?'s':''} executed` };
-      return { ...r, lastTriggeredAt: new Date().toISOString(), triggerCount: r.triggerCount + 1, runLog: [...r.runLog, logEntry] };
+      const results = r.actions.map(a => executeAction(a));
+      const note = results.join(' · ');
+      const logEntry = { ts: new Date().toISOString(), result:'success' as const, note };
+      return { ...r, lastTriggeredAt: new Date().toISOString(), triggerCount: r.triggerCount + 1, runLog: [...r.runLog.slice(-49), logEntry] };
     }));
   }
 

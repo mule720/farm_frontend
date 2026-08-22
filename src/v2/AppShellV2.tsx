@@ -32,6 +32,11 @@ import PoultryHouseDashboard from '@/pages/iot/PoultryHouse';
 import EnergyMonitor from '@/pages/iot/EnergyMonitor';
 import SoilDepth from '@/pages/iot/SoilDepth';
 import AutomationRules from '@/pages/iot/AutomationRules';
+import NotificationsCenter from '@/pages/notifications/NotificationsCenter';
+import AnimalHealth from '@/pages/health/AnimalHealth';
+import StaffLabour from '@/pages/hr/StaffLabour';
+import Procurement from '@/pages/procurement/Procurement';
+import BackupRestore from '@/pages/settings/BackupRestore';
 
 type Page = 'dashboard' | 'production' | 'inventory' | 'sales' | 'marketplace-food'
            | 'marketplace-supply' | 'marketplace-services' | 'finance' | 'reports'
@@ -39,7 +44,8 @@ type Page = 'dashboard' | 'production' | 'inventory' | 'sales' | 'marketplace-fo
            | 'ai-predictive' | 'ai-financial' | 'ai-smart' | 'ai-vision'
            | 'ai-weather' | 'ai-sustainability' | 'ai-devices' | 'iot-water'
            | 'iot-aquaculture' | 'iot-poultry'
-           | 'iot-energy' | 'iot-soil' | 'iot-automation';
+           | 'iot-energy' | 'iot-soil' | 'iot-automation'
+           | 'notifications' | 'animal-health' | 'staff-labour' | 'procurement' | 'backup';
 
 interface NavItem {
   id: Page;
@@ -73,8 +79,25 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'iot-energy',       label: 'Energy',         icon: <Zap className="w-4 h-4" />,        section: 'ai' },
   { id: 'iot-soil',         label: 'Soil Depth',     icon: <Activity className="w-4 h-4" />,   section: 'ai' },
   { id: 'iot-automation',   label: 'Automation',     icon: <Zap className="w-4 h-4" />,        section: 'ai' },
+  { id: 'notifications',  label: 'Notifications',  icon: <Bell className="w-4 h-4" />,       section: 'ops' },
+  { id: 'animal-health',  label: 'Animal Health',  icon: <Activity className="w-4 h-4" />,   section: 'ops' },
+  { id: 'staff-labour',   label: 'Staff & Labour', icon: <Check className="w-4 h-4" />,      section: 'ops' },
+  { id: 'procurement',    label: 'Procurement',    icon: <Truck className="w-4 h-4" />,      section: 'ops' },
   { id: 'config',        label: 'Settings',       icon: <Settings className="w-4 h-4" />,   section: 'bottom' },
+  { id: 'backup',        label: 'Backup & Restore', icon: <Search className="w-4 h-4" />,   section: 'bottom' },
 ];
+
+/** Count unresolved alerts across all IoT LS keys */
+function countAlerts(): number {
+  const keys = [
+    'agronexus_v2_aqua_alerts', 'agronexus_v2_wm_alerts', 'agronexus_v2_ph_alerts',
+    'agronexus_v2_em_alerts', 'agronexus_v2_sd_alerts', 'agronexus_v2_iot_device_alerts',
+  ];
+  return keys.reduce((n, k) => {
+    try { return n + (JSON.parse(localStorage.getItem(k) ?? '[]') as any[]).filter(a => !a.resolved).length; }
+    catch { return n; }
+  }, 0);
+}
 
 export default function AppShellV2() {
   const { org, editRequests } = useOrg();
@@ -82,6 +105,10 @@ export default function AppShellV2() {
   const [pageParams, setPageParams] = useState<Record<string, string>>({});
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [alertCount, setAlertCount] = useState(() => countAlerts());
+
+  // Refresh alert count whenever page changes (covers IoT pages that may create alerts)
+  React.useEffect(() => { setAlertCount(countAlerts()); }, [currentPage]);
 
   if (!org) return null;
 
@@ -141,6 +168,16 @@ export default function AppShellV2() {
         return <SoilDepth />;
       case 'iot-automation':
         return <AutomationRules />;
+      case 'notifications':
+        return <NotificationsCenter />;
+      case 'animal-health':
+        return <AnimalHealth />;
+      case 'staff-labour':
+        return <StaffLabour />;
+      case 'procurement':
+        return <Procurement />;
+      case 'backup':
+        return <BackupRestore />;
       case 'marketplace-food':
         return <AgriFood />;
       case 'marketplace-supply':
@@ -157,6 +194,7 @@ export default function AppShellV2() {
   const mainItems   = NAV_ITEMS.filter(n => n.section === 'main');
   const marketItems = NAV_ITEMS.filter(n => n.section === 'markets');
   const aiItems     = NAV_ITEMS.filter(n => n.section === 'ai');
+  const opsItems    = NAV_ITEMS.filter(n => n.section === 'ops');
   const bottomItems = NAV_ITEMS.filter(n => n.section === 'bottom');
 
   return (
@@ -203,6 +241,14 @@ export default function AppShellV2() {
           {aiItems.map(item => (
             <NavLink key={item.id} item={item} active={currentPage === item.id} collapsed={collapsed} onClick={() => navigate(item.id)} />
           ))}
+
+          {!collapsed && <NavSection label="Farm Management" />}
+          {opsItems.map(item => (
+            <NavLink key={item.id}
+              item={item.id === 'notifications' && alertCount > 0 ? { ...item, badge: alertCount } : item}
+              active={currentPage === item.id} collapsed={collapsed}
+              onClick={() => { navigate(item.id); if (item.id === 'notifications') setAlertCount(countAlerts()); }} />
+          ))}
         </nav>
 
         {/* Bottom */}
@@ -247,6 +293,14 @@ export default function AppShellV2() {
           </div>
 
           <div className="flex items-center gap-2">
+            <button onClick={() => navigate('notifications')} className="relative p-2 hover:bg-slate-100 rounded-lg" title="Notifications">
+              <Bell className="w-4 h-4 text-slate-500" />
+              {alertCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[9px] rounded-full flex items-center justify-center font-bold">
+                  {alertCount > 9 ? '9+' : alertCount}
+                </span>
+              )}
+            </button>
             <div className="text-xs text-slate-500 hidden sm:block">{org.currency}</div>
             <div className="w-8 h-8 bg-gradient-to-br from-green-400 to-emerald-500 rounded-full flex items-center justify-center text-white text-xs font-bold">
               {org.name.charAt(0).toUpperCase()}

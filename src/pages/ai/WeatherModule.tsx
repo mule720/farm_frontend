@@ -79,8 +79,35 @@ function ndviLabel(v: number) {
   return { label: 'Poor', cls: 'bg-red-100 text-red-700' };
 }
 
+interface WeatherStation {
+  name: string;
+  provider: string;
+  temp: string;
+  humidity: string;
+  rain: string;
+  wind: string;
+  status: 'online' | 'offline';
+}
+
+const LS_STATIONS = 'agronexus_v2_weather_stations';
+const DEFAULT_STATIONS: WeatherStation[] = [
+  { name: 'Main Station (Farm HQ)', provider: 'Davis Instruments', temp: '22°C', humidity: '58%', rain: '0 mm', wind: '12 km/h', status: 'online' },
+  { name: 'Field A Remote Sensor', provider: 'In-house IoT', temp: '21°C', humidity: '61%', rain: '0 mm', wind: '8 km/h', status: 'online' },
+  { name: 'OpenWeather API', provider: 'OpenWeatherMap', temp: '22°C', humidity: '57%', rain: '0 mm', wind: '14 km/h', status: 'online' },
+];
+
 export default function WeatherModule() {
   const [tab, setTab] = useState<'forecast' | 'current' | 'ndvi' | 'stations'>('forecast');
+  const [stations, setStations] = useState<WeatherStation[]>(() => {
+    try { return JSON.parse(localStorage.getItem(LS_STATIONS) ?? 'null') ?? DEFAULT_STATIONS; } catch { return DEFAULT_STATIONS; }
+  });
+  const [showAddStation, setShowAddStation] = useState(false);
+  const [newStation, setNewStation] = useState<Partial<WeatherStation>>({ status: 'online' });
+
+  function saveStations(list: WeatherStation[]) {
+    setStations(list);
+    localStorage.setItem(LS_STATIONS, JSON.stringify(list));
+  }
 
   const rainDays = FORECAST.filter(f => f.rain_pct > 50).length;
   const totalRain = FORECAST.reduce((s, f) => s + f.rainfall_mm, 0);
@@ -246,14 +273,10 @@ export default function WeatherModule() {
         <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-slate-900 flex items-center gap-2"><MapPin className="w-4 h-4" /> Weather Stations</h3>
-            <button className="flex items-center gap-1 text-sm text-sky-600 font-medium">+ Add Station</button>
+            <button onClick={() => setShowAddStation(true)} className="flex items-center gap-1 text-sm text-sky-600 font-medium hover:text-sky-700">+ Add Station</button>
           </div>
           <div className="space-y-3">
-            {[
-              { name: 'Main Station (Farm HQ)', provider: 'Davis Instruments', temp: '22°C', humidity: '58%', rain: '0 mm', wind: '12 km/h', status: 'online' },
-              { name: 'Field A Remote Sensor', provider: 'In-house IoT', temp: '21°C', humidity: '61%', rain: '0 mm', wind: '8 km/h', status: 'online' },
-              { name: 'OpenWeather API', provider: 'OpenWeatherMap', temp: '22°C', humidity: '57%', rain: '0 mm', wind: '14 km/h', status: 'online' },
-            ].map((station, i) => (
+            {stations.map((station, i) => (
               <div key={i} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
                 <div>
                   <div className="font-medium text-sm text-slate-900">{station.name}</div>
@@ -263,11 +286,50 @@ export default function WeatherModule() {
                   <span>{station.temp}</span>
                   <span>{station.humidity}</span>
                   <span>{station.rain}</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-400" />{station.status}</span>
+                  <span className="flex items-center gap-1">
+                    <span className={`w-2 h-2 rounded-full ${station.status === 'online' ? 'bg-green-400' : 'bg-slate-300'}`} />{station.status}
+                  </span>
+                  <button onClick={() => saveStations(stations.filter((_, j) => j !== i))} className="text-slate-300 hover:text-red-500 ml-1">✕</button>
                 </div>
               </div>
             ))}
           </div>
+
+          {/* Add Station Modal */}
+          {showAddStation && (
+            <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+                <h3 className="font-semibold text-slate-900">Add Weather Station</h3>
+                {[
+                  { label: 'Station Name', key: 'name', placeholder: 'e.g. South Field Sensor' },
+                  { label: 'Provider / Type', key: 'provider', placeholder: 'e.g. Davis Instruments, OpenWeatherMap' },
+                  { label: 'Location / Notes', key: 'temp', placeholder: 'e.g. 22°C (leave blank for manual entry)' },
+                ].map(({ label, key, placeholder }) => (
+                  <div key={key}>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">{label}</label>
+                    <input value={(newStation as any)[key] ?? ''} onChange={e => setNewStation(p => ({ ...p, [key]: e.target.value }))}
+                      placeholder={placeholder} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" />
+                  </div>
+                ))}
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
+                  <select value={newStation.status} onChange={e => setNewStation(p => ({ ...p, status: e.target.value as 'online' | 'offline' }))}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400">
+                    <option value="online">Online</option>
+                    <option value="offline">Offline</option>
+                  </select>
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button onClick={() => { setShowAddStation(false); setNewStation({ status: 'online' }); }} className="flex-1 py-2 border border-slate-300 rounded-xl text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
+                  <button onClick={() => {
+                    if (!newStation.name) return;
+                    saveStations([...stations, { name: newStation.name!, provider: newStation.provider ?? '—', temp: newStation.temp ?? '—', humidity: '—', rain: '—', wind: '—', status: newStation.status ?? 'online' }]);
+                    setShowAddStation(false); setNewStation({ status: 'online' });
+                  }} className="flex-1 py-2 bg-sky-600 text-white rounded-xl text-sm font-medium hover:bg-sky-700">Add Station</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
