@@ -7,7 +7,7 @@ import {
   Settings, Store, ChevronLeft, ChevronRight, Sprout, LogOut,
   BarChart3, Truck, Cpu, Menu, X, Brain, TrendingUp,
   Zap, Eye, Cloud, Leaf, Search, Plus, Check, Shield, Pencil,
-  Clock, CheckCircle2, XCircle, Radio, FileText,
+  Clock, CheckCircle2, XCircle, Radio, FileText, Building2,
 } from 'lucide-react';
 import DynamicDashboard from '@/pages/dashboard/DynamicDashboard';
 import ProductionEngine from '@/pages/production/ProductionEngine';
@@ -43,6 +43,9 @@ import ColdChain from '@/pages/iot/ColdChain';
 import FarmGateway from '@/pages/iot/FarmGateway';
 import ActivityLog from '@/pages/reports/ActivityLog';
 import CropRotation from '@/pages/production/CropRotation';
+import AgroDealers from '@/pages/marketplace/AgroDealers';
+import EquipmentHire from '@/pages/marketplace/EquipmentHire';
+import VetServices from '@/pages/marketplace/VetServices';
 
 type Page = 'dashboard' | 'production' | 'inventory' | 'sales' | 'marketplace-food'
            | 'marketplace-supply' | 'marketplace-services' | 'finance' | 'reports'
@@ -53,7 +56,8 @@ type Page = 'dashboard' | 'production' | 'inventory' | 'sales' | 'marketplace-fo
            | 'iot-energy' | 'iot-soil' | 'iot-automation'
            | 'notifications' | 'animal-health' | 'staff-labour' | 'procurement' | 'backup'
            | 'iot-gateway' | 'iot-cold-chain' | 'iot-farm-gateway'
-           | 'activity-log' | 'crop-rotation' | 'requisitions';
+           | 'activity-log' | 'crop-rotation' | 'requisitions'
+           | 'mkt-dealers' | 'mkt-hire' | 'mkt-vet';
 
 interface NavItem {
   id: Page;
@@ -71,9 +75,12 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'sales',       label: 'Sales',       icon: <ShoppingCart className="w-4 h-4" />,     section: 'main' },
   { id: 'finance',     label: 'Finance',     icon: <DollarSign className="w-4 h-4" />,       section: 'main' },
   { id: 'reports',     label: 'Reports',     icon: <BarChart3 className="w-4 h-4" />,        section: 'main' },
-  { id: 'marketplace-food',     label: 'AgriFood Market',    icon: <Store className="w-4 h-4" />,  section: 'markets' },
-  { id: 'marketplace-supply',   label: 'AgriSupply',         icon: <Truck className="w-4 h-4" />,  section: 'markets' },
-  { id: 'marketplace-services', label: 'AgriServices',       icon: <Settings className="w-4 h-4" />, section: 'markets' },
+  { id: 'marketplace-food',     label: 'AgriFood Market',    icon: <Store className="w-4 h-4" />,        section: 'markets' },
+  { id: 'marketplace-supply',   label: 'AgriSupply',         icon: <Truck className="w-4 h-4" />,        section: 'markets' },
+  { id: 'marketplace-services', label: 'AgriServices',       icon: <Settings className="w-4 h-4" />,     section: 'markets' },
+  { id: 'mkt-dealers',          label: 'Agro Dealers',       icon: <Building2 className="w-4 h-4" />,    section: 'markets' },
+  { id: 'mkt-hire',             label: 'Equipment Hire',     icon: <Truck className="w-4 h-4" />,        section: 'markets' },
+  { id: 'mkt-vet',              label: 'Vet Services',       icon: <Shield className="w-4 h-4" />,       section: 'markets' },
   { id: 'ai-smart',       label: 'Smart Engine',   icon: <Zap className="w-4 h-4" />,        section: 'ai' },
   { id: 'ai-predictive', label: 'AI Insights',    icon: <Brain className="w-4 h-4" />,      section: 'ai' },
   { id: 'ai-financial',  label: 'Financial AI',   icon: <TrendingUp className="w-4 h-4" />, section: 'ai' },
@@ -210,6 +217,12 @@ export default function AppShellV2() {
         return <AgriSupply />;
       case 'marketplace-services':
         return <AgriServices />;
+      case 'mkt-dealers':
+        return <AgroDealers />;
+      case 'mkt-hire':
+        return <EquipmentHire />;
+      case 'mkt-vet':
+        return <VetServices />;
       case 'config':
         return <ConfigPage org={org} onNavigate={navigate} />;
       default:
