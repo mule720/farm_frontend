@@ -7,7 +7,7 @@ import {
   Settings, Store, ChevronLeft, ChevronRight, Sprout, LogOut,
   BarChart3, Truck, Cpu, Menu, X, Brain, TrendingUp,
   Zap, Eye, Cloud, Leaf, Search, Plus, Check, Shield, Pencil,
-  Clock, CheckCircle2, XCircle, Radio,
+  Clock, CheckCircle2, XCircle, Radio, FileText,
 } from 'lucide-react';
 import DynamicDashboard from '@/pages/dashboard/DynamicDashboard';
 import ProductionEngine from '@/pages/production/ProductionEngine';
@@ -36,6 +36,7 @@ import NotificationsCenter from '@/pages/notifications/NotificationsCenter';
 import AnimalHealth from '@/pages/health/AnimalHealth';
 import StaffLabour from '@/pages/hr/StaffLabour';
 import Procurement from '@/pages/procurement/Procurement';
+import Requisitions from '@/pages/procurement/Requisitions';
 import BackupRestore from '@/pages/settings/BackupRestore';
 import DeviceGateway from '@/pages/iot/DeviceGateway';
 import ColdChain from '@/pages/iot/ColdChain';
@@ -52,7 +53,7 @@ type Page = 'dashboard' | 'production' | 'inventory' | 'sales' | 'marketplace-fo
            | 'iot-energy' | 'iot-soil' | 'iot-automation'
            | 'notifications' | 'animal-health' | 'staff-labour' | 'procurement' | 'backup'
            | 'iot-gateway' | 'iot-cold-chain' | 'iot-farm-gateway'
-           | 'activity-log' | 'crop-rotation';
+           | 'activity-log' | 'crop-rotation' | 'requisitions';
 
 interface NavItem {
   id: Page;
@@ -93,6 +94,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'animal-health',  label: 'Animal Health',  icon: <Activity className="w-4 h-4" />,   section: 'ops' },
   { id: 'staff-labour',   label: 'Staff & Labour', icon: <Check className="w-4 h-4" />,      section: 'ops' },
   { id: 'procurement',    label: 'Procurement',    icon: <Truck className="w-4 h-4" />,      section: 'ops' },
+  { id: 'requisitions',   label: 'Requisitions',   icon: <FileText className="w-4 h-4" />,   section: 'ops' },
   { id: 'activity-log',  label: 'Activity Log',   icon: <Clock className="w-4 h-4" />,      section: 'ops' },
   { id: 'crop-rotation', label: 'Crop Rotation',  icon: <Sprout className="w-4 h-4" />,     section: 'ops' },
   { id: 'config',        label: 'Settings',       icon: <Settings className="w-4 h-4" />,   section: 'bottom' },
@@ -188,6 +190,8 @@ export default function AppShellV2() {
         return <StaffLabour />;
       case 'procurement':
         return <Procurement />;
+      case 'requisitions':
+        return <Requisitions />;
       case 'backup':
         return <BackupRestore />;
       case 'iot-gateway':
