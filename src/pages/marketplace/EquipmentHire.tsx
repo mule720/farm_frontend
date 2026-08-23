@@ -142,6 +142,7 @@ export default function EquipmentHire() {
       categories: ['Land Prep', 'Planting', 'Spraying', 'Harvesting', 'Irrigation', 'Transport', 'Conservation', 'Mapping'],
       serviceUnitLabel: 'per ha / per day',
       registerLabel: 'List your equipment',
+      bookingType: 'hire',
       mockProviders: MOCK_HIRE,
       renderExtras: (p) => (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>

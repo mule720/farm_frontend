@@ -231,6 +231,7 @@ const cfg: ProviderDirectoryConfig = {
   ],
   serviceUnitLabel: 'per unit',
   registerLabel: 'Register your dealership',
+  bookingType: 'enquiry',
   mockProviders: MOCK_DEALERS,
   renderExtras: (p) =>
     p.specialties && p.specialties.length > 0 ? (

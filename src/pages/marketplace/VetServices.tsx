@@ -152,6 +152,7 @@ export default function VetServices() {
       categories: ['Consultation', 'Vaccination', 'Diagnostics', 'Laboratory', 'Surgery', 'Biosecurity', 'Teleconsultation', 'Nutrition', 'Breeding', 'Water Quality'],
       serviceUnitLabel: 'per visit',
       registerLabel: 'Register your practice',
+      bookingType: 'vet',
       mockProviders: MOCK_VETS,
       renderExtras: (p) => (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>

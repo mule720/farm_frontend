@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import {
-  Search, MapPin, Phone, Mail, Star, Shield, CheckCircle,
-  Plus, X, ChevronRight, Globe, Clock, Users, Tag, Building2, BadgeCheck,
+  Search, MapPin, Phone, Mail, Shield, CheckCircle,
+  Plus, X, ChevronRight, Globe, Clock, Tag, Building2, BadgeCheck,
+  CalendarDays, Loader2, WifiOff,
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { useOrg } from '@/store/orgStore';
+import { useProviderApi, HireBookingPayload, VetAppointmentPayload } from '@/hooks/useProviderApi';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -113,6 +115,8 @@ export function useProviders(storageKey: string, mockProviders: Provider[]) {
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
+export type BookingType = 'hire' | 'vet' | 'enquiry';
+
 export interface ProviderDirectoryConfig {
   storageKey: string;
   providerType: ProviderType;
@@ -123,6 +127,7 @@ export interface ProviderDirectoryConfig {
   serviceUnitLabel: string;
   registerLabel: string;
   mockProviders: Provider[];
+  bookingType?: BookingType;           // enables the Book button in detail modal
   renderExtras?: (p: Provider) => React.ReactNode;
 }
 
@@ -164,7 +169,21 @@ function relTime(iso: string): string {
 // ─── ProviderShell ───────────────────────────────────────────────────────────
 
 export function ProviderShell({ cfg }: { cfg: ProviderDirectoryConfig }) {
-  const { providers, addProvider, updateProvider, deleteProvider } = useProviders(cfg.storageKey, cfg.mockProviders);
+  const {
+    providers,
+    loading,
+    apiOnline,
+    addLocalProvider,
+    createHireBooking,
+    bookVetAppointment,
+  } = useProviderApi({
+    providerType: cfg.providerType,
+    mockProviders: cfg.mockProviders,
+    storageKey: cfg.storageKey,
+  });
+
+  // Keep backward-compat alias
+  const addProvider = addLocalProvider;
   const ac = accentClasses(cfg.accent);
 
   const [tab, setTab] = useState<'browse' | 'mine'>('browse');
@@ -174,6 +193,11 @@ export function ProviderShell({ cfg }: { cfg: ProviderDirectoryConfig }) {
   const [selected, setSelected] = useState<Provider | null>(null);
   const [detailTab, setDetailTab] = useState<'overview' | 'services' | 'reviews' | 'certs'>('overview');
   const [showRegister, setShowRegister] = useState(false);
+
+  // Booking state
+  const [bookingProvider, setBookingProvider] = useState<Provider | null>(null);
+  const [bookingSubmitting, setBookingSubmitting] = useState(false);
+  const [bookingDone, setBookingDone] = useState<string | null>(null); // ref number
 
   const [form, setForm] = useState({
     name: '', tagline: '', description: '', phone: '', email: '',
@@ -238,6 +262,20 @@ export function ProviderShell({ cfg }: { cfg: ProviderDirectoryConfig }) {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      {/* API status banner */}
+      {!apiOnline && !loading && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200 text-amber-800 text-xs">
+          <WifiOff size={12} />
+          <span>Showing sample data — connect to AgroNexus backend to see live provider profiles</span>
+        </div>
+      )}
+      {loading && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 border-b border-blue-200 text-blue-700 text-xs">
+          <Loader2 size={12} className="animate-spin" />
+          <span>Loading provider directory…</span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="border-b border-border px-4 py-4 sm:px-6">
         <div className="flex items-center justify-between flex-wrap gap-3">
@@ -331,6 +369,41 @@ export function ProviderShell({ cfg }: { cfg: ProviderDirectoryConfig }) {
           activeTab={detailTab}
           onTabChange={setDetailTab}
           onClose={() => setSelected(null)}
+          onBook={cfg.bookingType ? (p) => { setBookingProvider(p); setBookingDone(null); } : undefined}
+        />
+      )}
+
+      {/* Booking Modal */}
+      {bookingProvider && cfg.bookingType && (
+        <BookingModal
+          provider={bookingProvider}
+          bookingType={cfg.bookingType}
+          ac={ac}
+          submitting={bookingSubmitting}
+          doneRef={bookingDone}
+          onClose={() => { setBookingProvider(null); setBookingDone(null); }}
+          onSubmitHire={async (payload) => {
+            setBookingSubmitting(true);
+            try {
+              const res = await createHireBooking(payload);
+              setBookingDone(res.booking?.bookingRef ?? 'Submitted');
+            } catch {
+              setBookingDone('Enquiry saved — provider will contact you shortly.');
+            } finally {
+              setBookingSubmitting(false);
+            }
+          }}
+          onSubmitVet={async (payload) => {
+            setBookingSubmitting(true);
+            try {
+              const res = await bookVetAppointment(payload);
+              setBookingDone(res.appointment?.apptRef ?? 'Submitted');
+            } catch {
+              setBookingDone('Appointment request saved — provider will confirm.');
+            } finally {
+              setBookingSubmitting(false);
+            }
+          }}
         />
       )}
 
@@ -484,6 +557,7 @@ function DetailModal({
   activeTab,
   onTabChange,
   onClose,
+  onBook,
 }: {
   provider: Provider;
   cfg: ProviderDirectoryConfig;
@@ -491,6 +565,7 @@ function DetailModal({
   activeTab: 'overview' | 'services' | 'reviews' | 'certs';
   onTabChange: (t: 'overview' | 'services' | 'reviews' | 'certs') => void;
   onClose: () => void;
+  onBook?: (p: Provider) => void;
 }) {
   const detailTabs: { key: 'overview' | 'services' | 'reviews' | 'certs'; label: string }[] = [
     { key: 'overview', label: 'Overview' },
@@ -664,7 +739,7 @@ function DetailModal({
         <div className="px-5 py-3 border-t border-border bg-muted/30 flex flex-wrap gap-2 shrink-0">
           <a
             href={`tel:${p.phone}`}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium ${ac.btn}`}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-muted hover:bg-muted/80 border border-border"
           >
             📞 Call
           </a>
@@ -684,9 +759,227 @@ function DetailModal({
               🌐 Website
             </a>
           )}
+          {onBook && !p.mine && (
+            <button
+              onClick={() => onBook(p)}
+              className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold ${ac.btn}`}
+            >
+              <CalendarDays size={13} /> Book / Enquire
+            </button>
+          )}
           {p.mine && (
             <button className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-muted hover:bg-muted/80 border border-border">
               Edit
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── BookingModal ─────────────────────────────────────────────────────────────
+
+function BookingModal({
+  provider: p,
+  bookingType,
+  ac,
+  submitting,
+  doneRef,
+  onClose,
+  onSubmitHire,
+  onSubmitVet,
+}: {
+  provider: Provider;
+  bookingType: BookingType;
+  ac: ReturnType<typeof accentClasses>;
+  submitting: boolean;
+  doneRef: string | null;
+  onClose: () => void;
+  onSubmitHire: (payload: HireBookingPayload) => Promise<void>;
+  onSubmitVet: (payload: VetAppointmentPayload) => Promise<void>;
+}) {
+  const today = new Date().toISOString().split('T')[0];
+
+  // Hire form state
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate]     = useState(today);
+  const [hectares, setHectares]   = useState('');
+  const [delivery, setDelivery]   = useState('');
+  const [hireNotes, setHireNotes] = useState('');
+
+  // Vet form state
+  const [apptType, setApptType]     = useState('consultation');
+  const [apptDate, setApptDate]     = useState(today);
+  const [species, setSpecies]       = useState('');
+  const [animalCount, setAnimalCount] = useState('');
+  const [symptoms, setSymptoms]     = useState('');
+  const [vetNotes, setVetNotes]     = useState('');
+
+  // Enquiry form state
+  const [enquiryMsg, setEnquiryMsg] = useState('');
+
+  function handleSubmit() {
+    if (bookingType === 'hire') {
+      onSubmitHire({
+        providerId: p.id,
+        startDate,
+        endDate,
+        hectares: hectares ? parseFloat(hectares) : undefined,
+        deliveryAddress: delivery || undefined,
+        notes: hireNotes || undefined,
+      });
+    } else if (bookingType === 'vet') {
+      onSubmitVet({
+        providerId: p.id,
+        apptType,
+        apptDate,
+        species: species || undefined,
+        animalCount: animalCount ? parseInt(animalCount, 10) : undefined,
+        symptoms: symptoms || undefined,
+        notes: vetNotes || undefined,
+      });
+    } else {
+      // enquiry — store locally as a pending request
+      onSubmitVet({
+        providerId: p.id,
+        apptType: 'consultation',
+        apptDate: today,
+        notes: enquiryMsg,
+      });
+    }
+  }
+
+  const VET_TYPES = [
+    ['consultation','General Consultation'],
+    ['vaccination','Vaccination'],
+    ['treatment','Treatment / Procedure'],
+    ['diagnosis','Diagnosis / Lab'],
+    ['deworming','Deworming'],
+    ['pregnancy','Pregnancy Check'],
+    ['teleconsult','Teleconsultation (Remote)'],
+    ['other','Other'],
+  ];
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+      <div className="bg-background border border-border rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <div>
+            <h2 className="font-bold text-sm">
+              {bookingType === 'hire' ? '🚜 Book Equipment' : bookingType === 'vet' ? '🩺 Book Vet Service' : '✉️ Send Enquiry'}
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">{p.name}</p>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X size={18} /></button>
+        </div>
+
+        <div className="px-5 py-4">
+          {/* Done state */}
+          {doneRef ? (
+            <div className="text-center py-8 space-y-3">
+              <div className="text-4xl">✅</div>
+              <div className="font-semibold">Request submitted!</div>
+              {doneRef.startsWith('HB-') || doneRef.startsWith('VA-') ? (
+                <div className="text-xs text-muted-foreground">
+                  Reference: <span className="font-mono font-semibold text-foreground">{doneRef}</span>
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground">{doneRef}</div>
+              )}
+              <p className="text-xs text-muted-foreground">{p.name} will contact you on {p.phone}.</p>
+              <button onClick={onClose} className={`mt-2 px-6 py-2 rounded-lg text-sm font-medium ${ac.btn}`}>Close</button>
+            </div>
+          ) : bookingType === 'hire' ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium mb-1 text-muted-foreground">Start Date *</label>
+                  <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                    className="w-full px-3 py-2 text-sm bg-muted border border-border rounded-lg focus:outline-none" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1 text-muted-foreground">End Date *</label>
+                  <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                    className="w-full px-3 py-2 text-sm bg-muted border border-border rounded-lg focus:outline-none" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1 text-muted-foreground">Hectares (optional)</label>
+                <input type="number" value={hectares} onChange={e => setHectares(e.target.value)}
+                  placeholder="e.g. 5.0"
+                  className="w-full px-3 py-2 text-sm bg-muted border border-border rounded-lg focus:outline-none" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1 text-muted-foreground">Delivery / Site Address</label>
+                <input type="text" value={delivery} onChange={e => setDelivery(e.target.value)}
+                  placeholder="Farm location or GPS coordinates"
+                  className="w-full px-3 py-2 text-sm bg-muted border border-border rounded-lg focus:outline-none" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1 text-muted-foreground">Notes</label>
+                <textarea rows={3} value={hireNotes} onChange={e => setHireNotes(e.target.value)}
+                  placeholder="Equipment type, soil conditions, any special requirements…"
+                  className="w-full px-3 py-2 text-sm bg-muted border border-border rounded-lg focus:outline-none resize-none" />
+              </div>
+            </div>
+          ) : bookingType === 'vet' ? (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium mb-1 text-muted-foreground">Service Type *</label>
+                <select value={apptType} onChange={e => setApptType(e.target.value)}
+                  className="w-full px-3 py-2 text-sm bg-muted border border-border rounded-lg focus:outline-none">
+                  {VET_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1 text-muted-foreground">Appointment Date *</label>
+                <input type="date" value={apptDate} onChange={e => setApptDate(e.target.value)}
+                  className="w-full px-3 py-2 text-sm bg-muted border border-border rounded-lg focus:outline-none" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium mb-1 text-muted-foreground">Species</label>
+                  <input type="text" value={species} onChange={e => setSpecies(e.target.value)}
+                    placeholder="e.g. Broilers, Tilapia"
+                    className="w-full px-3 py-2 text-sm bg-muted border border-border rounded-lg focus:outline-none" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1 text-muted-foreground">Animal Count</label>
+                  <input type="number" value={animalCount} onChange={e => setAnimalCount(e.target.value)}
+                    placeholder="e.g. 500"
+                    className="w-full px-3 py-2 text-sm bg-muted border border-border rounded-lg focus:outline-none" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1 text-muted-foreground">Symptoms / Reason</label>
+                <textarea rows={2} value={symptoms} onChange={e => setSymptoms(e.target.value)}
+                  placeholder="Describe symptoms or what the visit is for…"
+                  className="w-full px-3 py-2 text-sm bg-muted border border-border rounded-lg focus:outline-none resize-none" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1 text-muted-foreground">Additional Notes</label>
+                <textarea rows={2} value={vetNotes} onChange={e => setVetNotes(e.target.value)}
+                  className="w-full px-3 py-2 text-sm bg-muted border border-border rounded-lg focus:outline-none resize-none" />
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">Send a message to <strong>{p.name}</strong>. They will respond via phone or email.</p>
+              <textarea rows={5} value={enquiryMsg} onChange={e => setEnquiryMsg(e.target.value)}
+                placeholder="Describe what you need, quantities, location, timing…"
+                className="w-full px-3 py-2 text-sm bg-muted border border-border rounded-lg focus:outline-none resize-none" />
+            </div>
+          )}
+
+          {!doneRef && (
+            <button
+              onClick={handleSubmit}
+              disabled={submitting}
+              className={`mt-4 w-full py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 ${ac.btn} disabled:opacity-60`}
+            >
+              {submitting ? <><Loader2 size={14} className="animate-spin" />Submitting…</> : 'Submit Request'}
             </button>
           )}
         </div>
