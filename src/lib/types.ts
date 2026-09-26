@@ -201,6 +201,45 @@ export interface EditRequest {
 
 // ─── Organisation Config ──────────────────────────────────────────────────────
 
+export type BusinessType =
+  | 'farmer'
+  | 'agro_dealer'
+  | 'vet_provider'
+  | 'equipment_hire'
+  | 'agrifood_seller'
+  | 'agrisupply_provider'
+  | 'agriservices_provider'
+  | 'processor'
+  | 'transport'
+  | 'cooperative';
+
+export interface VendorListing {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  price: number;
+  unit: string;
+  available: boolean;
+  tags: string[];
+  createdAt: string;
+}
+
+export interface VendorOrder {
+  id: string;
+  listingId: string;
+  listingTitle: string;
+  buyerName: string;
+  buyerPhone: string;
+  quantity: number;
+  unit: string;
+  totalAmount: number;
+  currency: string;
+  status: 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
+  notes: string;
+  createdAt: string;
+}
+
 export interface OrgProfile {
   id: string;
   name: string;
@@ -208,7 +247,11 @@ export interface OrgProfile {
   currency: string;
   timezone: string;
   onboardingComplete: boolean;
+  businessType: BusinessType;
+  serviceCategories?: string[]; // for vendors — what they offer
   enterprises: EnterpriseConfig[];
+  vendorListings?: VendorListing[];
+  vendorOrders?: VendorOrder[];
   editApproval?: EditApprovalConfig; // edit workflow configuration
   createdAt: string;
 }

@@ -3,9 +3,9 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = 'https://xvszdnaulqekenfvsjmt.databasepad.com';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImIxYWEzOTA5LWEwZDQtNDE5MC05MWM3LTgxYTE4NjkwZDA0YiJ9.eyJwcm9qZWN0SWQiOiJ4dnN6ZG5hdWxxZWtlbmZ2c2ptdCIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzc4MTcwODMwLCJleHAiOjIwOTM1MzA4MzAsImlzcyI6ImZhbW91cy5kYXRhYmFzZXBhZCIsImF1ZCI6ImZhbW91cy5jbGllbnRzIn0.RziNuuv2z9u-gE62AIEftEb5ChLV_FrxNDRSbN-MgVk';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: { persistSession: true, autoRefreshToken: true },
 });

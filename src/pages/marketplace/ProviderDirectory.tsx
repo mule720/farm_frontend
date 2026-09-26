@@ -2,11 +2,12 @@ import React, { useState, useMemo } from 'react';
 import {
   Search, MapPin, Phone, Mail, Shield, CheckCircle,
   Plus, X, ChevronRight, Globe, Clock, Tag, Building2, BadgeCheck,
-  CalendarDays, Loader2, WifiOff,
+  CalendarDays, Loader2, WifiOff, Video,
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { useOrg } from '@/store/orgStore';
 import { useProviderApi, HireBookingPayload, VetAppointmentPayload } from '@/hooks/useProviderApi';
+import StartVideoCallButton from '@/components/video/StartVideoCallButton';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -766,6 +767,14 @@ function DetailModal({
             >
               <CalendarDays size={13} /> Book / Enquire
             </button>
+          )}
+          {/* Video call — available for vets, agronomists, and any verified provider */}
+          {!p.mine && (p.providerType === 'vet' || p.providerType === 'agronomist' || p.verified) && (
+            <StartVideoCallButton
+              providerId={p.id}
+              providerName={p.name}
+              subject={p.providerType === 'vet' ? 'Veterinary consultation' : p.providerType === 'agronomist' ? 'Agronomist advisory' : `Consultation with ${p.name}`}
+            />
           )}
           {p.mine && (
             <button className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-muted hover:bg-muted/80 border border-border">

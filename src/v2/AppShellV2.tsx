@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { useOrg } from '@/store/orgStore';
+import { useAuth } from '@/contexts/AuthContext';
+import IncomingCallBanner from '@/components/video/IncomingCallBanner';
 import { getTemplate } from '@/lib/templates';
 import { ALL_TEMPLATES } from '@/lib/templates';
 import {
@@ -7,13 +9,17 @@ import {
   Settings, Store, ChevronLeft, ChevronRight, Sprout, LogOut,
   BarChart3, Truck, Cpu, Menu, X, Brain, TrendingUp,
   Zap, Eye, Cloud, Leaf, Search, Plus, Check, Shield, Pencil,
-  Clock, CheckCircle2, XCircle, Radio, FileText, Building2,
+  Clock, CheckCircle2, XCircle, Radio, FileText, Building2, Bell, Landmark, Users,
 } from 'lucide-react';
 import DynamicDashboard from '@/pages/dashboard/DynamicDashboard';
 import ProductionEngine from '@/pages/production/ProductionEngine';
 import ProcessingEngine from '@/pages/processing/ProcessingEngine';
 import InventoryEngine from '@/pages/inventory/InventoryEngine';
 import SalesEngine from '@/pages/sales/SalesEngine';
+import TradeDocuments from '@/pages/sales/TradeDocuments';
+import CreditProfile from '@/pages/finance/CreditProfile';
+import TeamPermissions from '@/pages/settings/TeamPermissions';
+import { navModule } from '@/lib/permissions';
 import FinanceEngine from '@/pages/finance/FinanceEngine';
 import AgriFood from '@/pages/marketplace/AgriFood';
 import AgriSupply from '@/pages/marketplace/AgriSupply';
@@ -38,6 +44,9 @@ import StaffLabour from '@/pages/hr/StaffLabour';
 import Procurement from '@/pages/procurement/Procurement';
 import Requisitions from '@/pages/procurement/Requisitions';
 import BackupRestore from '@/pages/settings/BackupRestore';
+import DataSharingConsent from '@/pages/settings/DataSharingConsent';
+import MyExtensionOfficer from '@/pages/settings/MyExtensionOfficer';
+import MyProgrammes from '@/pages/settings/MyProgrammes';
 import DeviceGateway from '@/pages/iot/DeviceGateway';
 import ColdChain from '@/pages/iot/ColdChain';
 import FarmGateway from '@/pages/iot/FarmGateway';
@@ -47,7 +56,7 @@ import AgroDealers from '@/pages/marketplace/AgroDealers';
 import EquipmentHire from '@/pages/marketplace/EquipmentHire';
 import VetServices from '@/pages/marketplace/VetServices';
 
-type Page = 'dashboard' | 'production' | 'inventory' | 'sales' | 'marketplace-food'
+type Page = 'dashboard' | 'production' | 'inventory' | 'sales' | 'trade-docs' | 'credit' | 'team' | 'marketplace-food'
            | 'marketplace-supply' | 'marketplace-services' | 'finance' | 'reports'
            | 'config' | 'enterprise' | 'cycle' | 'new-cycle' | 'processing'
            | 'ai-predictive' | 'ai-financial' | 'ai-smart' | 'ai-vision'
@@ -73,7 +82,9 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'processing',  label: 'Processing',  icon: <Cpu className="w-4 h-4" />,              section: 'main' },
   { id: 'inventory',   label: 'Inventory',   icon: <Package className="w-4 h-4" />,          section: 'main' },
   { id: 'sales',       label: 'Sales',       icon: <ShoppingCart className="w-4 h-4" />,     section: 'main' },
+  { id: 'trade-docs',  label: 'Trade & Export', icon: <FileText className="w-4 h-4" />,      section: 'main' },
   { id: 'finance',     label: 'Finance',     icon: <DollarSign className="w-4 h-4" />,       section: 'main' },
+  { id: 'credit',      label: 'Credit Profile', icon: <Landmark className="w-4 h-4" />,       section: 'main' },
   { id: 'reports',     label: 'Reports',     icon: <BarChart3 className="w-4 h-4" />,        section: 'main' },
   { id: 'marketplace-food',     label: 'AgriFood Market',    icon: <Store className="w-4 h-4" />,        section: 'markets' },
   { id: 'marketplace-supply',   label: 'AgriSupply',         icon: <Truck className="w-4 h-4" />,        section: 'markets' },
@@ -104,6 +115,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'requisitions',   label: 'Requisitions',   icon: <FileText className="w-4 h-4" />,   section: 'ops' },
   { id: 'activity-log',  label: 'Activity Log',   icon: <Clock className="w-4 h-4" />,      section: 'ops' },
   { id: 'crop-rotation', label: 'Crop Rotation',  icon: <Sprout className="w-4 h-4" />,     section: 'ops' },
+  { id: 'team',          label: 'Team & Permissions', icon: <Users className="w-4 h-4" />, section: 'bottom' },
   { id: 'config',        label: 'Settings',       icon: <Settings className="w-4 h-4" />,   section: 'bottom' },
   { id: 'backup',        label: 'Backup & Restore', icon: <Search className="w-4 h-4" />,   section: 'bottom' },
 ];
@@ -122,6 +134,7 @@ function countAlerts(): number {
 
 export default function AppShellV2() {
   const { org, editRequests } = useOrg();
+  const { hasPermission } = useAuth();
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [pageParams, setPageParams] = useState<Record<string, string>>({});
   const [collapsed, setCollapsed] = useState(false);
@@ -159,6 +172,12 @@ export default function AppShellV2() {
         return <InventoryEngine />;
       case 'sales':
         return <SalesEngine />;
+      case 'trade-docs':
+        return <TradeDocuments />;
+      case 'credit':
+        return <CreditProfile />;
+      case 'team':
+        return <TeamPermissions accent="emerald" />;
       case 'finance':
         return <FinanceEngine />;
       case 'reports':
@@ -230,13 +249,17 @@ export default function AppShellV2() {
     }
   }
 
-  const mainItems   = NAV_ITEMS.filter(n => n.section === 'main');
-  const marketItems = NAV_ITEMS.filter(n => n.section === 'markets');
-  const aiItems     = NAV_ITEMS.filter(n => n.section === 'ai');
-  const opsItems    = NAV_ITEMS.filter(n => n.section === 'ops');
-  const bottomItems = NAV_ITEMS.filter(n => n.section === 'bottom');
+  // Sidebar follows the user's effective permission matrix (backend-computed)
+  const visibleItems = NAV_ITEMS.filter(n => { const m = navModule(n.id); return !m || hasPermission(m); });
+  const mainItems   = visibleItems.filter(n => n.section === 'main');
+  const marketItems = visibleItems.filter(n => n.section === 'markets');
+  const aiItems     = visibleItems.filter(n => n.section === 'ai');
+  const opsItems    = visibleItems.filter(n => n.section === 'ops');
+  const bottomItems = visibleItems.filter(n => n.section === 'bottom');
 
   return (
+    <>
+    <IncomingCallBanner />
     <div className="flex h-screen bg-slate-50 overflow-hidden">
       {/* Mobile overlay */}
       {mobileOpen && (
@@ -353,6 +376,7 @@ export default function AppShellV2() {
         </main>
       </div>
     </div>
+    </>
   );
 }
 
@@ -404,6 +428,8 @@ function ComingSoon({ title, icon, desc }: { title: string; icon: string; desc: 
 function ConfigPage({ org, onNavigate }: { org: any; onNavigate: (p: string) => void }) {
   const [showAddEnterprise, setShowAddEnterprise] = useState(false);
   const { updateOrg, editRequests, approveEdit, rejectEdit, dismissEdit } = useOrg();
+  const { profile, hasPermission } = useAuth();
+  const isAdmin = profile?.role === 'director' || profile?.role === 'saas_admin';
 
   const approval = org.editApproval ?? { enabled: false, approverName: '', currentUserName: '', requireReason: false };
   const pendingEdits = editRequests.filter((r: any) => r.status === 'pending');
@@ -430,6 +456,11 @@ function ConfigPage({ org, onNavigate }: { org: any; onNavigate: (p: string) => 
           <div><dt className="text-slate-400 text-xs">Timezone</dt><dd className="font-medium">{org.timezone}</dd></div>
         </dl>
       </div>
+
+      {/* Government / partner data sharing */}
+      <DataSharingConsent />
+      <MyExtensionOfficer />
+      <MyProgrammes />
 
       {/* Enterprises */}
       <div className="bg-white rounded-2xl border border-slate-200 p-5">
@@ -609,20 +640,25 @@ function ConfigPage({ org, onNavigate }: { org: any; onNavigate: (p: string) => 
         </div>
       )}
 
-      {/* Data reset (dev) */}
-      <div className="bg-red-50 border border-red-200 rounded-2xl p-5">
-        <h3 className="font-semibold text-red-800 mb-2">Developer</h3>
-        <button
-          onClick={() => {
-            localStorage.removeItem('agronexus_v2_org');
-            localStorage.removeItem('agronexus_v2_cycles');
-            window.location.reload();
-          }}
-          className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700"
-        >
-          Reset workspace (re-run onboarding)
-        </button>
-      </div>
+      {/* Data reset — director/saas_admin only */}
+      {isAdmin && (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-5">
+          <h3 className="font-semibold text-red-800 mb-2">Danger Zone</h3>
+          <p className="text-xs text-red-600 mb-3">This will erase all local workspace data and restart onboarding. This action cannot be undone.</p>
+          <button
+            onClick={() => {
+              if (!confirm('Are you sure? This will reset the entire workspace and cannot be undone.')) return;
+              localStorage.removeItem('agronexus_v2_org');
+              localStorage.removeItem('agronexus_v2_cycles');
+              localStorage.removeItem('agronexus_v2_edit_requests');
+              window.location.reload();
+            }}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700"
+          >
+            Reset workspace (re-run onboarding)
+          </button>
+        </div>
+      )}
 
       {showAddEnterprise && (
         <AddEnterpriseModal onClose={() => setShowAddEnterprise(false)} />

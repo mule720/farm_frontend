@@ -21,7 +21,7 @@ interface OrgState {
   loading: boolean;
 
   // Org setup
-  createOrg: (name: string, country: string, currency: string) => void;
+  createOrg: (name: string, country: string, currency: string, businessType?: string) => void;
   updateOrg: (patch: Partial<OrgProfile>) => void;
   completeOnboarding: () => void;
 
@@ -141,7 +141,7 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
 
   // ─── Org ────────────────────────────────────────────────────────────────────
 
-  const createOrg = useCallback((name: string, country: string, currency: string) => {
+  const createOrg = useCallback((name: string, country: string, currency: string, businessType = 'farmer') => {
     const newOrg: OrgProfile = {
       id: uuidv4(),
       name,
@@ -149,6 +149,7 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
       currency,
       timezone: 'Africa/Lusaka',
       onboardingComplete: false,
+      businessType: businessType as import('@/lib/types').BusinessType,
       enterprises: [],
       createdAt: new Date().toISOString(),
     };

@@ -6,6 +6,7 @@ import AuthModal from './farm/AuthModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { SubscriptionProvider, useSubscription, UpgradeModal } from '@/contexts/SubscriptionContext';
 import { Loader2, X, Zap, AlertTriangle } from 'lucide-react';
+import IncomingCallBanner from './video/IncomingCallBanner';
 
 type AppView = 'landing' | 'app' | 'admin';
 
@@ -152,6 +153,8 @@ function InnerLayout() {
         )}
         <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} initialMode={authMode} />
         {upgradeModule && <UpgradeModal moduleId={upgradeModule} onClose={() => setUpgradeModule(null)} />}
+        {/* Rings when a provider calls back — polls every 30s for video_call notifications */}
+        <IncomingCallBanner />
       </div>
     </AgroNexusContext.Provider>
   );

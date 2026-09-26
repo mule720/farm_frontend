@@ -138,3 +138,23 @@ export function resolvePermissions(role: string, rawPerms: any): string[] {
     .filter(([, actions]) => actions.includes('view'))
     .map(([id]) => id);
 }
+
+
+// ─── Navigation → module map ───────────────────────────────────────────────────
+// Which module governs each sidebar item (farm shell). Items not listed are
+// always visible (dashboard-level pages).
+export const NAV_MODULE_MAP: Record<string, string> = {
+  production: 'production', processing: 'production', inventory: 'inventory', sales: 'sales', 'trade-docs': 'export',
+  credit: 'credit', finance: 'finance', reports: 'reports',
+  'marketplace-food': 'marketplace', 'marketplace-supply': 'marketplace', 'marketplace-services': 'marketplace',
+  'mkt-dealers': 'marketplace', 'mkt-hire': 'marketplace', 'mkt-vet': 'marketplace',
+  'ai-smart': 'smart-engine', 'ai-predictive': 'smart-engine', 'ai-financial': 'finance', 'ai-vision': 'production',
+  'ai-weather': 'weather', 'ai-sustainability': 'reports', 'ai-devices': 'devices', 'iot-water': 'devices',
+  'iot-aquaculture': 'devices', 'iot-poultry': 'devices', 'iot-energy': 'devices', 'iot-soil': 'devices',
+  'iot-automation': 'devices', 'iot-gateway': 'devices', 'iot-cold-chain': 'devices', 'iot-farm-gateway': 'devices',
+  'animal-health': 'biosecurity', 'staff-labour': 'hr', procurement: 'procurement', requisitions: 'procurement',
+  'crop-rotation': 'planner', config: 'settings', team: 'team',
+};
+export function navModule(navId: string): string | null {
+  return NAV_MODULE_MAP[navId] ?? null;
+}
