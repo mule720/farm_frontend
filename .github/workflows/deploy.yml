@@ -1,111 +1,33 @@
-name: Build & Deploy Frontend
+name: Deploy AgroNexus Frontend
 
+# Was GKE-targeted (agronexus-cluster on the "agrinexus-farm" GCP project) -
+# switched to the same Hostinger VPS the rest of the ecosystem now deploys
+# onto, for the same reason as the backend.
 on:
   push:
     branches: [master, main]
-  pull_request:
-    branches: [master, main]
-
-env:
-  REGION: us-central1
-  CLUSTER: agronexus-cluster
-  REPO: agronexus
-  IMAGE_FRONTEND: frontend
 
 jobs:
-  # ── Build check (PRs and pushes) ──────────────────────────────────────────
-  build:
-    name: TypeScript Build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Type check
-        run: npx tsc --noEmit
-
-      - name: Build (with placeholder API URL)
-        run: npm run build
-        env:
-          VITE_API_URL: https://api.placeholder.com/graphql/
-
-  # ── Build & push Docker image (main/master only) ──────────────────────────
-  docker-push:
-    name: Build & Push Docker image
-    runs-on: ubuntu-latest
-    needs: build
-    if: github.event_name == 'push'
-
-    permissions:
-      contents: read
-      id-token: write
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Authenticate to GCP
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
-
-      - name: Build and push frontend image
-        run: |
-          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE_FRONTEND }}"
-          docker build \
-            --build-arg "VITE_API_URL=${{ secrets.VITE_API_URL }}" \
-            -t "${IMAGE}:${{ github.sha }}" \
-            -t "${IMAGE}:latest" \
-            .
-          docker push "${IMAGE}:${{ github.sha }}"
-          docker push "${IMAGE}:latest"
-
-  # ── Deploy to GKE (main/master only) ─────────────────────────────────────
   deploy:
-    name: Deploy to GKE
+    name: Deploy
     runs-on: ubuntu-latest
-    needs: docker-push
-    if: github.event_name == 'push'
-
-    permissions:
-      contents: read
-      id-token: write
 
     steps:
-      - name: Authenticate to GCP
-        uses: google-github-actions/auth@v2
+      - name: SSH deploy
+        uses: appleboy/ssh-action@v1.0.3
         with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            cd /var/www/farm/farm_frontend
+            git pull --ff-only
+            docker build -t farm-frontend:latest .
 
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-        with:
-          install_components: gke-gcloud-auth-plugin
+            docker stop farm-frontend-web 2>/dev/null || true
+            docker rm farm-frontend-web 2>/dev/null || true
+            docker run -d --name farm-frontend-web --restart unless-stopped --network host \
+              farm-frontend:latest
 
-      - name: Get GKE credentials
-        run: |
-          gcloud container clusters get-credentials ${{ env.CLUSTER }} \
-            --region ${{ env.REGION }} \
-            --project ${{ secrets.GCP_PROJECT_ID }}
-
-      - name: Roll out new frontend image
-        run: |
-          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE_FRONTEND }}:${{ github.sha }}"
-          kubectl set image deployment/agronexus-frontend frontend="${IMAGE}" -n agronexus
-
-      - name: Verify rollout
-        run: kubectl rollout status deployment/agronexus-frontend -n agronexus --timeout=120s
+            docker image prune -f
