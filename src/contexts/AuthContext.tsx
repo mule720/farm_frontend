@@ -27,6 +27,8 @@ export interface Profile {
   full_name: string;
   role: UserRole;
   organization: string;
+  /** Backend organisation UUID — shared by every member of the company, keys the farm workspace */
+  organizationId?: string;
   orgType?: string;
   businessType?: string;
   /** Organisation administrator — team, branches, permissions */
@@ -104,7 +106,7 @@ function normalizeError(e: unknown): string {
 
 // ─── GraphQL documents ────────────────────────────────────────────────────────
 
-const USER_FIELDS = `id email fullName role organizationName orgType businessType isOrgAdmin branchName permissions avatarUrl phone preferences`;
+const USER_FIELDS = `id email fullName role organizationName organization { id } orgType businessType isOrgAdmin branchName permissions avatarUrl phone preferences`;
 
 const ME_QUERY       = `query Me { me { ${USER_FIELDS} } }`;
 const LOGIN_MUTATION = `mutation Login($email: String!, $password: String!) { login(email: $email, password: $password) { token user { ${USER_FIELDS} } } }`;
@@ -129,6 +131,7 @@ function mapGql(u: any): Profile {
     full_name: u.fullName ?? '',
     role: ((u.role ?? 'farmhand') as string).toLowerCase() as UserRole,
     organization: u.organizationName ?? '',
+    organizationId: u.organization?.id || undefined,
     orgType: u.orgType || undefined,
     businessType: u.businessType || undefined,
     isOrgAdmin: !!u.isOrgAdmin,

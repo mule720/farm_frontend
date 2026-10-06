@@ -427,7 +427,7 @@ function ComingSoon({ title, icon, desc }: { title: string; icon: string; desc: 
 
 function ConfigPage({ org, onNavigate }: { org: any; onNavigate: (p: string) => void }) {
   const [showAddEnterprise, setShowAddEnterprise] = useState(false);
-  const { updateOrg, editRequests, approveEdit, rejectEdit, dismissEdit } = useOrg();
+  const { updateOrg, editRequests, approveEdit, rejectEdit, dismissEdit, resetWorkspace } = useOrg();
   const { profile, hasPermission } = useAuth();
   const isAdmin = profile?.role === 'director' || profile?.role === 'saas_admin';
 
@@ -644,14 +644,11 @@ function ConfigPage({ org, onNavigate }: { org: any; onNavigate: (p: string) => 
       {isAdmin && (
         <div className="bg-red-50 border border-red-200 rounded-2xl p-5">
           <h3 className="font-semibold text-red-800 mb-2">Danger Zone</h3>
-          <p className="text-xs text-red-600 mb-3">This will erase all local workspace data and restart onboarding. This action cannot be undone.</p>
+          <p className="text-xs text-red-600 mb-3">This will erase the whole company workspace for every member and restart onboarding. This action cannot be undone.</p>
           <button
             onClick={() => {
-              if (!confirm('Are you sure? This will reset the entire workspace and cannot be undone.')) return;
-              localStorage.removeItem('agronexus_v2_org');
-              localStorage.removeItem('agronexus_v2_cycles');
-              localStorage.removeItem('agronexus_v2_edit_requests');
-              window.location.reload();
+              if (!confirm('Are you sure? This will reset the entire workspace for everyone in your company and cannot be undone.')) return;
+              resetWorkspace();
             }}
             className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700"
           >

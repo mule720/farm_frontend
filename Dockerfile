@@ -11,7 +11,7 @@ RUN npm ci --prefer-offline
 COPY . .
 
 # VITE_API_URL must be passed as a build-arg so Vite bakes it into the bundle
-ARG VITE_API_URL
+ARG VITE_API_URL=https://api.agrinuxes.com/graphql/
 ENV VITE_API_URL=$VITE_API_URL
 
 RUN npm run build

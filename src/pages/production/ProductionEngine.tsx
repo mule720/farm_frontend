@@ -18,6 +18,7 @@ import {
   DailyRecord, ProductionEvent,
 } from '@/lib/types';
 import { v4 as uuidv4 } from 'uuid';
+import DailyRecordsCsvImport from './DailyRecordsCsvImport';
 
 interface Props {
   enterpriseId?: string;
@@ -932,7 +933,7 @@ function StagesTab({ cycle, template }: { cycle: ProductionCycle; template: Prod
 // computed fields are auto-derived from other numeric fields (listed in computedFrom[])
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface DailyField {
+export interface DailyField {
   id: string;
   label: string;
   type: 'number' | 'select' | 'text' | 'computed';
@@ -1410,6 +1411,10 @@ function DailyLogTab({ cycle, template, currentStage }: {
           }`}>
           {saved ? '✓ Record saved!' : '📝 Save Daily Record'}
         </button>
+        {/* Bulk upload — many days at once from a spreadsheet */}
+        {fields.length > 0 && (
+          <DailyRecordsCsvImport cycle={cycle} fields={fields} defaultStageId={stageId} />
+        )}
       </div>
 
       {/* History */}

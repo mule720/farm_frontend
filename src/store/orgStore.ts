@@ -10,7 +10,8 @@ import {
 } from '@/lib/types';
 import { getTemplate } from '@/lib/templates';
 import { emit, type StockInPayload, type CostPayload, type IncomePayload, type EggsSetPayload } from '@/lib/bus';
-import { supabase } from '@/lib/supabase';
+import { gqlRequest } from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
 
 // ─── State shape ──────────────────────────────────────────────────────────────
 
@@ -24,6 +25,8 @@ interface OrgState {
   createOrg: (name: string, country: string, currency: string, businessType?: string) => void;
   updateOrg: (patch: Partial<OrgProfile>) => void;
   completeOnboarding: () => void;
+  /** Erase the whole company workspace (shared copy + this browser) and restart onboarding. */
+  resetWorkspace: () => Promise<void>;
 
   // Enterprises
   addEnterprise: (config: Omit<EnterpriseConfig, 'id' | 'createdAt'>) => EnterpriseConfig;
@@ -63,87 +66,158 @@ const OrgContext = createContext<OrgState | null>(null);
 const STORAGE_KEY = 'agronexus_v2_org';
 const CYCLES_KEY  = 'agronexus_v2_cycles';
 const EDITS_KEY   = 'agronexus_v2_edit_requests';
+// Which backend organisation the cached workspace belongs to. Absent on data
+// written before workspaces were keyed by account (legacy, random org ids).
+const ACCOUNT_KEY = 'agronexus_v2_org_account';
+
+// ─── Backend sync (one shared workspace per organisation) ────────────────────
+
+const WORKSPACE_QUERY = `query Workspace { workspace { orgData cycles editRequests } }`;
+const SAVE_WORKSPACE = `mutation SaveWorkspace($i: SaveWorkspaceInput!) { saveWorkspace(input: $i) { ok } }`;
+const RESET_WORKSPACE = `mutation ResetWorkspace { resetWorkspace { ok } }`;
+
+function parseJson<T>(raw: unknown): T | null {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw === 'string') { try { return JSON.parse(raw) as T; } catch { return null; } }
+  return raw as T;
+}
+
+/** Load the organisation's shared workspace from the backend (null when not set up yet). */
+async function fetchWorkspace() {
+  const res = await gqlRequest<{ workspace: { orgData: string; cycles: string; editRequests: string } | null }>(WORKSPACE_QUERY);
+  const ws = res.workspace;
+  if (!ws) return { org: null, cycles: null, edits: null, exists: false };
+  return {
+    org: parseJson<OrgProfile>(ws.orgData),
+    cycles: parseJson<ProductionCycle[]>(ws.cycles),
+    edits: parseJson<EditRequest[]>(ws.editRequests),
+    exists: true,
+  };
+}
+
+function saveWorkspace(parts: { org?: OrgProfile; cycles?: ProductionCycle[]; edits?: EditRequest[] }) {
+  const i: Record<string, string> = {};
+  if (parts.org) i.orgData = JSON.stringify(parts.org);
+  if (parts.cycles) i.cycles = JSON.stringify(parts.cycles);
+  if (parts.edits) i.editRequests = JSON.stringify(parts.edits);
+  if (!Object.keys(i).length) return Promise.resolve();
+  return gqlRequest(SAVE_WORKSPACE, { i }).then(() => undefined).catch(() => { /* offline — localStorage keeps the copy, next save retries */ });
+}
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function OrgProvider({ children }: { children: React.ReactNode }) {
+  const { profile, loading: authLoading } = useAuth();
+  // The workspace is shared by the whole company: keyed by the backend organisation.
+  const accountOrgId = profile?.organizationId ?? null;
   const [org, setOrg] = useState<OrgProfile | null>(null);
   const [cycles, setCycles] = useState<ProductionCycle[]>([]);
   const [editRequests, setEditRequests] = useState<EditRequest[]>([]);
   const [loading, setLoading] = useState(true);
+  // Block persistence until hydration has settled so an empty initial state
+  // never overwrites the shared copy.
+  const [hydratedFor, setHydratedFor] = useState<string | null>(null);
 
   // Hydrate: localStorage first (instant), then Supabase (authoritative / cross-device)
   useEffect(() => {
+    if (authLoading) return;
+    let cancelled = false;
+    setLoading(true);
+    setHydratedFor(null);
+
     // 1. Load localStorage for instant display
-    let localOrgId: string | null = null;
+    let local: OrgProfile | null = null;
+    let localCycles: ProductionCycle[] = [];
+    let localEdits: EditRequest[] = [];
+    let localAccount: string | null = null;
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) { const parsed = JSON.parse(raw); setOrg(parsed); localOrgId = parsed?.id ?? null; }
+      if (raw) local = JSON.parse(raw);
       const rawCycles = localStorage.getItem(CYCLES_KEY);
-      if (rawCycles) setCycles(JSON.parse(rawCycles));
+      if (rawCycles) localCycles = JSON.parse(rawCycles);
       const rawEdits = localStorage.getItem(EDITS_KEY);
-      if (rawEdits) setEditRequests(JSON.parse(rawEdits));
+      if (rawEdits) localEdits = JSON.parse(rawEdits);
+      localAccount = localStorage.getItem(ACCOUNT_KEY);
     } catch { /* ignore corrupt data */ }
 
-    // 2. Load from Supabase (overrides localStorage with fresher/cross-device data)
-    if (localOrgId) {
-      Promise.all([
-        supabase.from('agronexus_orgs').select('data').eq('id', localOrgId).maybeSingle(),
-        supabase.from('agronexus_cycles').select('data').eq('org_id', localOrgId),
-        supabase.from('agronexus_edit_requests').select('data').eq('org_id', localOrgId),
-      ]).then(([orgRes, cyclesRes, editsRes]) => {
-        if (!orgRes.error && orgRes.data) setOrg(orgRes.data.data as OrgProfile);
-        if (!cyclesRes.error && cyclesRes.data?.length) setCycles(cyclesRes.data.map((r: any) => r.data as ProductionCycle));
-        if (!editsRes.error && editsRes.data?.length) setEditRequests(editsRes.data.map((r: any) => r.data as EditRequest));
-      }).finally(() => setLoading(false));
+    // Cached data from another company (or none) must not leak into this account.
+    const cacheMatches = !accountOrgId
+      || (local?.id === accountOrgId)
+      || (!localAccount && !!local && local.id !== accountOrgId); // legacy cache → migrate below
+    if (cacheMatches && local) {
+      setOrg(local); setCycles(localCycles); setEditRequests(localEdits);
     } else {
-      setLoading(false);
+      setOrg(null); setCycles([]); setEditRequests([]);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Persist org (localStorage + Supabase)
-  useEffect(() => {
-    if (org) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(org));
-      supabase.from('agronexus_orgs').upsert({ id: org.id, data: org, updated_at: new Date().toISOString() });
-    }
-  }, [org]);
+    // 2. Load the shared copy from the backend (authoritative, cross-device, all members)
+    if (!accountOrgId) { setLoading(false); setHydratedFor(''); return; }
 
-  // Persist cycles (localStorage + Supabase)
+    (async () => {
+      const ws = await fetchWorkspace();
+      if (cancelled) return;
+
+      if (!ws.exists && local && !localAccount) {
+        // First login since workspaces moved to the backend: this browser holds
+        // the company's data (random legacy id). Adopt it for the whole company.
+        const adopted: OrgProfile = { ...local, id: accountOrgId };
+        await saveWorkspace({ org: adopted, cycles: localCycles, edits: localEdits });
+        if (cancelled) return;
+        setOrg(adopted); setCycles(localCycles); setEditRequests(localEdits);
+        return;
+      }
+
+      if (ws.org) setOrg(ws.org);
+      else setOrg(null);
+      setCycles(ws.cycles ?? []);
+      setEditRequests(ws.edits ?? []);
+    })().catch(() => { /* offline — keep whatever the cache gave us */ })
+      .finally(() => { if (!cancelled) { setLoading(false); setHydratedFor(accountOrgId ?? ''); } });
+
+    return () => { cancelled = true; };
+  }, [accountOrgId, authLoading]);
+
+  const ready = hydratedFor !== null && hydratedFor === (accountOrgId ?? '');
+
+  // Persist org (localStorage + backend). Skips the hydration render itself.
+  const skipNext = React.useRef({ org: true, cycles: true, edits: true });
+  useEffect(() => { skipNext.current = { org: true, cycles: true, edits: true }; }, [hydratedFor]);
+
   useEffect(() => {
+    if (!ready) return;
+    const skip = skipNext.current.org; skipNext.current.org = false;
+    if (!org) return;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(org));
+    if (accountOrgId) localStorage.setItem(ACCOUNT_KEY, accountOrgId);
+    if (!skip && accountOrgId) saveWorkspace({ org });
+  }, [org, ready, accountOrgId]);
+
+  // Persist cycles (localStorage + backend), debounced — daily logging and CSV imports write in bursts
+  useEffect(() => {
+    if (!ready) return;
     localStorage.setItem(CYCLES_KEY, JSON.stringify(cycles));
-    if (!org?.id) return;
-    const orgId = org.id;
-    if (cycles.length > 0) {
-      supabase.from('agronexus_cycles').upsert(
-        cycles.map(c => ({ id: c.id, org_id: orgId, enterprise_id: c.enterpriseId, data: c, updated_at: new Date().toISOString() }))
-      );
-    }
-    // Remove any cycles deleted from this org that no longer exist
-    const ids = cycles.map(c => c.id);
-    if (ids.length > 0) {
-      supabase.from('agronexus_cycles').delete().eq('org_id', orgId).not('id', 'in', `(${ids.map(i => `'${i}'`).join(',')})`)
-        .then(); // best-effort cleanup
-    } else {
-      supabase.from('agronexus_cycles').delete().eq('org_id', orgId).then();
-    }
-  }, [cycles, org?.id]);
+    const skip = skipNext.current.cycles; skipNext.current.cycles = false;
+    if (skip || !accountOrgId || !org?.id) return;
+    const t = setTimeout(() => saveWorkspace({ cycles }), 600);
+    return () => clearTimeout(t);
+  }, [cycles, org?.id, ready, accountOrgId]);
 
-  // Persist edit requests (localStorage + Supabase)
+  // Persist edit requests (localStorage + backend)
   useEffect(() => {
+    if (!ready) return;
     localStorage.setItem(EDITS_KEY, JSON.stringify(editRequests));
-    if (!org?.id || !editRequests.length) return;
-    const orgId = org.id;
-    supabase.from('agronexus_edit_requests').upsert(
-      editRequests.map(r => ({ id: r.id, org_id: orgId, data: r, updated_at: new Date().toISOString() }))
-    );
-  }, [editRequests, org?.id]);
+    const skip = skipNext.current.edits; skipNext.current.edits = false;
+    if (skip || !accountOrgId || !org?.id) return;
+    const t = setTimeout(() => saveWorkspace({ edits: editRequests }), 600);
+    return () => clearTimeout(t);
+  }, [editRequests, org?.id, ready, accountOrgId]);
 
   // ─── Org ────────────────────────────────────────────────────────────────────
 
   const createOrg = useCallback((name: string, country: string, currency: string, businessType = 'farmer') => {
     const newOrg: OrgProfile = {
-      id: uuidv4(),
+      // Keyed by the backend organisation so every member shares one workspace
+      id: accountOrgId ?? uuidv4(),
       name,
       country,
       currency,
@@ -154,7 +228,7 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
       createdAt: new Date().toISOString(),
     };
     setOrg(newOrg);
-  }, []);
+  }, [accountOrgId]);
 
   const updateOrg = useCallback((patch: Partial<OrgProfile>) => {
     setOrg(prev => prev ? { ...prev, ...patch } : null);
@@ -163,6 +237,12 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
   const completeOnboarding = useCallback(() => {
     setOrg(prev => prev ? { ...prev, onboardingComplete: true } : null);
   }, []);
+
+  const resetWorkspace = useCallback(async () => {
+    if (accountOrgId) await gqlRequest(RESET_WORKSPACE);
+    [STORAGE_KEY, CYCLES_KEY, EDITS_KEY, ACCOUNT_KEY].forEach(k => localStorage.removeItem(k));
+    window.location.reload();
+  }, [accountOrgId]);
 
   // ─── Enterprises ─────────────────────────────────────────────────────────────
 
@@ -587,7 +667,7 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
   return React.createElement(OrgContext.Provider, {
     value: {
       org, cycles, editRequests, loading,
-      createOrg, updateOrg, completeOnboarding,
+      createOrg, updateOrg, completeOnboarding, resetWorkspace,
       addEnterprise, updateEnterprise, removeEnterprise,
       addCycle, updateCycle, getCyclesForEnterprise, getActiveCycle,
       addDailyRecord, addEvent, advanceStage, completeCycle, deleteCycle,
