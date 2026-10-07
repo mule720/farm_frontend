@@ -68,6 +68,18 @@ export function peek<T = any>(type: BusEventType): T[] {
   return readBus().filter(e => e.type === type && !e.consumed).map(e => e.payload as T);
 }
 
+/** Unconsumed events with their ids and origin, without consuming them (so delivery can be confirmed first) */
+export function peekEvents<T = any>(type: BusEventType): { id: string; payload: T; sourceModule: string }[] {
+  return readBus().filter(e => e.type === type && !e.consumed).map(e => ({ id: e.id, payload: e.payload as T, sourceModule: e.sourceModule }));
+}
+
+/** Mark specific events consumed */
+export function markConsumed(ids: string[]) {
+  if (ids.length === 0) return;
+  const set = new Set(ids);
+  writeBus(readBus().map(e => set.has(e.id) ? { ...e, consumed: true } : e));
+}
+
 /** Count unconsumed events of a type (for badges) */
 export function pendingCount(type: BusEventType): number {
   return readBus().filter(e => e.type === type && !e.consumed).length;

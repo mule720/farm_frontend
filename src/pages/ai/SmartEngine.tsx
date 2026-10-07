@@ -6,6 +6,7 @@ import React, { useMemo } from 'react';
 import { Brain, Wheat, Droplet, TrendingUp, AlertTriangle, Sparkles, Zap, RefreshCw } from 'lucide-react';
 import { useOrg } from '@/store/orgStore';
 import { getTemplate } from '@/lib/templates';
+import { useTransactions } from '@/lib/financeStore';
 
 // ─── Per-category feeding norms (g/animal/day, ml/animal/day) ─────────────────
 const FEEDING_NORMS: Record<string, { feedG: number; waterMl: number; feedType: string; notes: string }> = {
@@ -33,7 +34,7 @@ interface Insight {
   severity: 'info' | 'warning' | 'critical';
 }
 
-function generateInsights(): Insight[] {
+function generateInsights(txs: any[]): Insight[] {
   const insights: Insight[] = [];
 
   // 1. Aquaculture — low DO + aerator off
@@ -83,7 +84,6 @@ function generateInsights(): Insight[] {
 
   // 4. Finance — this month P&L
   try {
-    const txs: any[] = JSON.parse(localStorage.getItem('agronexus_v2_transactions') ?? '[]');
     const now = new Date();
     const monthTxs = txs.filter(t => {
       const d = new Date(t.date ?? t.createdAt ?? '');
@@ -153,7 +153,8 @@ export default function SmartEngine() {
 
   // Computed insights from live localStorage data
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const insights = useMemo(() => generateInsights(), [refreshKey]);
+  const ledger = useTransactions();
+  const insights = useMemo(() => generateInsights(ledger), [refreshKey, ledger]);
 
   // Build today's feeding plan from real cycles
   const todayPlan = useMemo(() => {

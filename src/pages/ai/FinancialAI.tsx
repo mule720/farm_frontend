@@ -238,6 +238,7 @@ function LoanTracker({ currency }: { currency: string }) {
   );
 }
 import { useOrg } from '@/store/orgStore';
+import { useTransactions } from '@/lib/financeStore';
 import { getTemplate } from '@/lib/templates';
 
 // ─── Break-Even Calculator (interactive) ──────────────────────────────────────
@@ -310,9 +311,7 @@ export default function FinancialAIModule() {
   const [selectedCycleId, setSelectedCycleId] = useState<string>('');
 
   // ── Pull real data from Finance Engine localStorage ───────────────────────
-  const txs: any[] = useMemo(() => {
-    try { return JSON.parse(localStorage.getItem('agronexus_v2_transactions') ?? '[]'); } catch { return []; }
-  }, []);
+  const txs: any[] = useTransactions();
   const orders: any[] = useMemo(() => {
     try { return JSON.parse(localStorage.getItem('agronexus_v2_orders') ?? '[]'); } catch { return []; }
   }, []);

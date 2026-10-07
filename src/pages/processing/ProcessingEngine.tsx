@@ -10,7 +10,8 @@ import {
 } from 'lucide-react';
 import { ProcessingBatch, ProcessingRecipe, OutputRouting } from '@/lib/types';
 import { v4 as uuidv4 } from 'uuid';
-import { emit, type StockInPayload, type StockOutPayload, type CostPayload } from '@/lib/bus';
+import { emit, type StockInPayload, type StockOutPayload } from '@/lib/bus';
+import { postFinance, inferCostCategory } from '@/lib/financeStore';
 
 // ─── Built-in recipe templates ────────────────────────────────────────────────
 const DEFAULT_RECIPES: ProcessingRecipe[] = [
@@ -182,14 +183,12 @@ function useBatches() {
         // Emit batch total cost to Finance so it appears automatically
         const totalCost = (next.totalCost ?? 0) + (next.laborCost ?? 0) + (next.overheadCost ?? 0);
         if (totalCost > 0) {
-          emit<CostPayload>('finance:cost', {
-            category: 'Processing',
+          postFinance('processing', [{
+            sourceRef: `proc:${id}`, type: 'expense', category: inferCostCategory('Processing'),
             description: `Processing batch: ${next.recipeId} (${next.batchNumber ?? id.slice(0, 6)})`,
-            amount: totalCost,
-            date: next.endDate ?? today,
-            cycleRef: next.cycleRef,
-            reference: `batch:${id}`,
-          }, 'processing');
+            amount: totalCost, date: next.endDate ?? today, cycleRef: next.cycleRef, reference: `batch:${id}`,
+            notes: 'Auto-recorded from processing',
+          }]);
         }
       }
 

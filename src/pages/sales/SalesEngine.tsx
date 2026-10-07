@@ -8,7 +8,8 @@ import {
   Clock, AlertCircle, Search, ChevronRight, DollarSign,
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-import { emit, type StockOutPayload, type IncomePayload } from '@/lib/bus';
+import { emit, type StockOutPayload } from '@/lib/bus';
+import { postFinance } from '@/lib/financeStore';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type OrderStatus    = 'draft' | 'confirmed' | 'fulfilled' | 'cancelled';
@@ -115,14 +116,13 @@ function useSales() {
           }, 'sales');
         });
 
-        // Also record income on the bus so FinanceEngine auto-captures it
-        emit<IncomePayload>('finance:income', {
+        // Record the income in the farm ledger (posted once per order, however often this runs)
+        postFinance('sales', [{
+          sourceRef: `sale:${next.id}`, type: 'income', category: 'sale_income',
           description: `Sales order ${next.orderNumber} — ${next.customerName}`,
-          amount: next.total,
-          date: today,
-          cycleRef: next.cycleRef,
-          reference: next.orderNumber,
-        }, 'sales');
+          amount: next.total, date: today, cycleRef: next.cycleRef, reference: next.orderNumber,
+          notes: 'Auto-recorded from sales',
+        }]);
       }
 
       return updated;

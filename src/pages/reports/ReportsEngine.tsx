@@ -9,6 +9,7 @@ import {
   AlertTriangle, CheckCircle, Clock,
 } from 'lucide-react';
 import { useOrg } from '@/store/orgStore';
+import { useTransactions } from '@/lib/financeStore';
 import { getTemplate } from '@/lib/templates';
 import { exportCSV, backupAll } from '@/lib/exportUtils';
 
@@ -270,7 +271,7 @@ export default function ReportsEngine() {
   }>({ enterpriseId: '', cycleId: '', type: 'feed', description: '', amount: '', date: new Date().toISOString().slice(0, 10) });
 
   // ── LS reads (all at top, useMemo with [] deps) ──────────────────────────
-  const txs = useMemo<any[]>(() => { try { return JSON.parse(localStorage.getItem('agronexus_v2_transactions') ?? '[]') as any[]; } catch { return []; } }, []);
+  const txs: any[] = useTransactions();
   const orders = useMemo<any[]>(() => { try { return JSON.parse(localStorage.getItem('agronexus_v2_orders') ?? '[]') as any[]; } catch { return []; } }, []);
   const invItems = useMemo<any[]>(() => { try { return JSON.parse(localStorage.getItem('agronexus_v2_inventory_items') ?? '[]') as any[]; } catch { return []; } }, []);
   const batches = useMemo<any[]>(() => { try { return JSON.parse(localStorage.getItem('agronexus_v2_batches') ?? '[]') as any[]; } catch { return []; } }, []);

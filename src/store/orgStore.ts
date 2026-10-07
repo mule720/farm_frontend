@@ -9,8 +9,9 @@ import {
   DailyRecord, ProductionEvent, EditRequest, ProductionTemplate,
 } from '@/lib/types';
 import { getTemplate, setCustomTemplates } from '@/lib/templates';
-import { emit, type StockInPayload, type CostPayload, type IncomePayload, type EggsSetPayload } from '@/lib/bus';
+import { emit, type StockInPayload, type EggsSetPayload } from '@/lib/bus';
 import { gqlRequest } from '@/lib/api';
+import { postFinance, setFinanceAccount, inferCostCategory } from '@/lib/financeStore';
 import { useAuth } from '@/contexts/AuthContext';
 
 // ─── State shape ──────────────────────────────────────────────────────────────
@@ -184,6 +185,9 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
   }, [accountOrgId, authLoading]);
 
   const ready = hydratedFor !== null && hydratedFor === (accountOrgId ?? '');
+
+  // The finance ledger is per company, held on the server
+  useEffect(() => { setFinanceAccount(accountOrgId); }, [accountOrgId]);
 
   // Make the company's saved templates visible to every getTemplate() caller.
   // Done during render so children never see a stale list.
@@ -391,14 +395,12 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
     // ─── Cross-module bus emissions ──────────────────────────────────────────
     // 1. Purchases → finance:cost + optionally inventory:stock_in
     if (event.type === 'purchase' && d.total_cost) {
-      emit<CostPayload>('finance:cost', {
-        category: d.category ?? 'Production Input',
-        description: d.item ?? 'Farm purchase',
-        amount: Number(d.total_cost),
-        date: (event.date as string) ?? today,
-        cycleRef: cycleId,
-        reference: d.receipt_no,
-      }, 'production');
+      postFinance('production', [{
+        sourceRef: `prod:${eventId}:purchase`, type: 'expense', category: inferCostCategory(d.category ?? 'Production Input'),
+        description: d.item ?? 'Farm purchase', amount: Number(d.total_cost),
+        date: (event.date as string) ?? today, cycleRef: cycleId, reference: d.receipt_no,
+        notes: 'Auto-recorded from production engine',
+      }]);
       if (d.add_to_inventory) {
         emit<StockInPayload>('inventory:stock_in', {
           materialTypeId: d.item ?? 'unknown',
@@ -415,34 +417,32 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
 
     // 2. Treatments → finance:cost
     if ((event.type === 'treatment' || event.type === 'vaccination') && d.cost) {
-      emit<CostPayload>('finance:cost', {
-        category: event.type === 'vaccination' ? 'Veterinary – Vaccination' : 'Veterinary – Treatment',
+      postFinance('production', [{
+        sourceRef: `prod:${eventId}:treatment`, type: 'expense', category: 'medicine',
         description: `${d.vaccine_name ?? d.product ?? 'Vet treatment'} (${d.treated_count ?? ''} head)`,
-        amount: Number(d.cost),
-        date: (event.date as string) ?? today,
-        cycleRef: cycleId,
-      }, 'production');
+        amount: Number(d.cost), date: (event.date as string) ?? today, cycleRef: cycleId,
+        notes: 'Auto-recorded from production engine',
+      }]);
     }
 
     // 3. Stocking → finance:cost
     if (event.type === 'stocking' && d.total_cost) {
-      emit<CostPayload>('finance:cost', {
-        category: 'Stocking – Fingerlings',
+      postFinance('production', [{
+        sourceRef: `prod:${eventId}:stocking`, type: 'expense', category: 'other_cost',
         description: `${d.count ?? ''} ${d.species ?? 'fish'} stocked (${d.location ?? ''})`,
-        amount: Number(d.total_cost),
-        date: (event.date as string) ?? today,
-        cycleRef: cycleId,
-      }, 'production');
+        amount: Number(d.total_cost), date: (event.date as string) ?? today, cycleRef: cycleId,
+        notes: 'Auto-recorded from production engine',
+      }]);
     }
 
     // 4. Direct sale → finance:income
     if (event.type === 'sale' && d.total_value) {
-      emit<IncomePayload>('finance:income', {
+      postFinance('production', [{
+        sourceRef: `prod:${eventId}:sale`, type: 'income', category: 'sale_income',
         description: `Farm sale: ${d.product ?? ''} (${d.quantity ?? ''} ${d.unit ?? ''})`,
-        amount: Number(d.total_value),
-        date: (event.date as string) ?? today,
-        cycleRef: cycleId,
-      }, 'production');
+        amount: Number(d.total_value), date: (event.date as string) ?? today, cycleRef: cycleId,
+        notes: 'Auto-recorded from production engine',
+      }]);
     }
 
     // 5. Harvest → inventory:stock_in (when routed to inventory)

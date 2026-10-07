@@ -2,122 +2,16 @@
 // AgroNexus v2 — Finance Engine
 // Cost records, income, profitability per cycle, P&L dashboard
 // ─────────────────────────────────────────────────────────────────────────────
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Plus, X, DollarSign, TrendingUp, TrendingDown, BarChart3,
-  ChevronDown, ChevronUp, Pencil,
+  ChevronDown, ChevronUp, Pencil, Lock, RefreshCw,
 } from 'lucide-react';
-import { v4 as uuidv4 } from 'uuid';
-import { consume, type CostPayload, type IncomePayload } from '@/lib/bus';
 import { useOrg } from '@/store/orgStore';
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-type TxCategory = 'feed' | 'medicine' | 'seed' | 'fertiliser' | 'labour' | 'equipment' | 'transport' | 'utilities' | 'marketing' | 'repairs' | 'other_cost' | 'sale_income' | 'grant' | 'other_income';
-type TxType = 'income' | 'expense';
-
-interface Transaction {
-  id: string;
-  type: TxType;
-  category: TxCategory;
-  description: string;
-  amount: number;
-  date: string;
-  cycleRef?: string;    // link to a production cycle / batch
-  reference?: string;   // receipt #, invoice #
-  notes?: string;
-  createdAt: string;
-}
-
-// ─── Storage ─────────────────────────────────────────────────────────────────
-const TX_KEY = 'agronexus_v2_transactions';
-
-function useFinance() {
-  const [transactions, setTransactions] = useState<Transaction[]>(() => {
-    try { return JSON.parse(localStorage.getItem(TX_KEY) ?? '[]'); } catch { return []; }
-  });
-  React.useEffect(() => { localStorage.setItem(TX_KEY, JSON.stringify(transactions)); }, [transactions]);
-
-  function addTransaction(tx: Omit<Transaction, 'id' | 'createdAt'>) {
-    const t = { ...tx, id: uuidv4(), createdAt: new Date().toISOString() };
-    setTransactions(prev => [...prev, t]);
-    return t;
-  }
-  function deleteTransaction(id: string) {
-    setTransactions(prev => prev.filter(t => t.id !== id));
-  }
-  function updateTransaction(id: string, patch: Partial<Omit<Transaction, 'id' | 'createdAt'>>) {
-    setTransactions(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t));
-  }
-
-  // ─── Consume bus events ──────────────────────────────────────────────────────
-  // Finance engine drains finance:cost and finance:income events from the bus
-  useEffect(() => {
-    function drainBus() {
-      const costs = consume<CostPayload>('finance:cost');
-      const incomes = consume<IncomePayload>('finance:income');
-
-      if (costs.length === 0 && incomes.length === 0) return;
-
-      setTransactions(prev => {
-        const newTxs: Transaction[] = [];
-
-        costs.forEach(p => {
-          newTxs.push({
-            id: uuidv4(),
-            type: 'expense',
-            category: inferCostCategory(p.category),
-            description: p.description,
-            amount: p.amount,
-            date: p.date,
-            cycleRef: p.cycleRef,
-            reference: p.reference,
-            notes: 'Auto-recorded from production engine',
-            createdAt: new Date().toISOString(),
-          });
-        });
-
-        incomes.forEach(p => {
-          newTxs.push({
-            id: uuidv4(),
-            type: 'income',
-            category: 'sale_income',
-            description: p.description,
-            amount: p.amount,
-            date: p.date,
-            cycleRef: p.cycleRef,
-            reference: p.reference,
-            notes: 'Auto-recorded from production engine',
-            createdAt: new Date().toISOString(),
-          });
-        });
-
-        return [...prev, ...newTxs];
-      });
-    }
-
-    drainBus();
-    const interval = setInterval(drainBus, 10_000);
-    return () => clearInterval(interval);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return { transactions, addTransaction, deleteTransaction, updateTransaction };
-}
-
-// Map free-text cost category from bus payload → TxCategory enum
-function inferCostCategory(category: string): TxCategory {
-  const c = category.toLowerCase();
-  if (/feed|fodder|silage/.test(c))          return 'feed';
-  if (/medicine|vet|vaccination|treatment/.test(c)) return 'medicine';
-  if (/seed|seedling/.test(c))               return 'seed';
-  if (/fertiliser|fertilizer/.test(c))       return 'fertiliser';
-  if (/labour|wage|salary/.test(c))          return 'labour';
-  if (/equipment|machinery/.test(c))         return 'equipment';
-  if (/transport|delivery/.test(c))          return 'transport';
-  if (/utility|electric|water|fuel/.test(c)) return 'utilities';
-  if (/repair|maintenance/.test(c))          return 'repairs';
-  return 'other_cost';
-}
+import {
+  useFinanceStore, addTransaction as saveNew, updateTransaction as saveEdit, deleteTransaction as removeTx,
+  type Transaction, type TxType, type TxCategory,
+} from '@/lib/financeStore';
 
 // ─── Category metadata ────────────────────────────────────────────────────────
 const EXPENSE_CATS: { key: TxCategory; label: string; icon: string }[] = [
@@ -148,8 +42,19 @@ const catIcon  = (k: TxCategory) => ALL_CATS.find(c => c.key === k)?.icon  ?? '�
 type FTab = 'dashboard' | 'income' | 'expenses' | 'all';
 
 export default function FinanceEngine() {
-  const { transactions, addTransaction, deleteTransaction, updateTransaction } = useFinance();
+  const { transactions, status, error, pending, reload } = useFinanceStore();
   const { cycles } = useOrg();
+  const [actionError, setActionError] = useState('');
+
+  // Every change goes to the company account; show what the server said if it refuses
+  async function run(fn: () => Promise<unknown>, onOk?: () => void) {
+    setActionError('');
+    try { await fn(); onOk?.(); }
+    catch (e) { setActionError(String((e as any)?.message ?? e)); }
+  }
+  const addTransaction = (tx: Parameters<typeof saveNew>[0]) => run(() => saveNew(tx), () => setShowAdd(null));
+  const updateTransaction = (id: string, tx: Parameters<typeof saveEdit>[1]) => run(() => saveEdit(id, tx), () => setEditingTx(null));
+  const deleteTransaction = (id: string) => run(() => removeTx(id));
   const [tab, setTab] = useState<FTab>('dashboard');
   const [showAdd, setShowAdd] = useState<TxType | null>(null);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
@@ -174,7 +79,10 @@ export default function FinanceEngine() {
         <div className="flex items-center justify-between gap-3 mb-3">
           <div>
             <h2 className="font-bold text-slate-900">Finance</h2>
-            <p className="text-xs text-slate-500">{transactions.length} transactions</p>
+            <p className="text-xs text-slate-500">
+              {status === 'loading' ? 'Loading…' : `${transactions.length} transactions`}
+              {pending > 0 && <span className="ml-2 text-amber-600">· {pending} syncing</span>}
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <select value={periodMonths} onChange={e => setPeriodMonths(+e.target.value)}
@@ -185,12 +93,12 @@ export default function FinanceEngine() {
               <option value={12}>Last 12 months</option>
               <option value={999}>All time</option>
             </select>
-            <button onClick={() => setShowAdd('income')}
-              className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">
+            <button onClick={() => setShowAdd('income')} disabled={status !== 'ready'}
+              className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-40">
               <Plus className="w-3.5 h-3.5" /> Income
             </button>
-            <button onClick={() => setShowAdd('expense')}
-              className="flex items-center gap-1 px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-medium hover:bg-red-700">
+            <button onClick={() => setShowAdd('expense')} disabled={status !== 'ready'}
+              className="flex items-center gap-1 px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-medium hover:bg-red-700 disabled:opacity-40">
               <Plus className="w-3.5 h-3.5" /> Expense
             </button>
           </div>
@@ -207,25 +115,48 @@ export default function FinanceEngine() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-5">
-        {tab === 'dashboard' && (
+        {actionError && (
+          <div className="mb-4 max-w-lg flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+            <span className="flex-1">{actionError}</span>
+            <button onClick={() => setActionError('')} aria-label="Dismiss"><X className="w-4 h-4" /></button>
+          </div>
+        )}
+        {status === 'denied' && (
+          <div className="max-w-md mx-auto text-center py-16">
+            <Lock className="w-10 h-10 mx-auto mb-3 text-slate-300" />
+            <p className="text-sm font-semibold text-slate-700">You do not have access to Finance</p>
+            <p className="text-xs text-slate-500 mt-1">Ask an owner or administrator of your company to give you access under Team &amp; Permissions.</p>
+          </div>
+        )}
+        {status === 'error' && (
+          <div className="max-w-md mx-auto text-center py-16">
+            <p className="text-sm font-semibold text-slate-700">The ledger could not be loaded</p>
+            <p className="text-xs text-slate-500 mt-1 break-words">{error}</p>
+            <button onClick={() => { void reload(); }} className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-yellow-500 text-white hover:bg-yellow-600">
+              <RefreshCw className="w-4 h-4" /> Try again
+            </button>
+          </div>
+        )}
+        {(status === 'idle' || status === 'loading') && <div className="text-center py-16 text-sm text-slate-400">Loading your ledger…</div>}
+        {status === 'ready' && tab === 'dashboard' && (
           <Dashboard
             totalIncome={totalIncome} totalExpense={totalExpense} profit={profit} margin={margin}
             transactions={inPeriod} periodMonths={periodMonths}
           />
         )}
-        {tab === 'income' && (
+        {status === 'ready' && tab === 'income' && (
           <TxList
             transactions={inPeriod.filter(t => t.type === 'income').sort((a, b) => b.date.localeCompare(a.date))}
             onDelete={deleteTransaction} onEdit={setEditingTx}
           />
         )}
-        {tab === 'expenses' && (
+        {status === 'ready' && tab === 'expenses' && (
           <TxList
             transactions={inPeriod.filter(t => t.type === 'expense').sort((a, b) => b.date.localeCompare(a.date))}
             onDelete={deleteTransaction} onEdit={setEditingTx}
           />
         )}
-        {tab === 'all' && (
+        {status === 'ready' && tab === 'all' && (
           <TxList
             transactions={[...inPeriod].sort((a, b) => b.date.localeCompare(a.date))}
             onDelete={deleteTransaction} onEdit={setEditingTx}
@@ -237,7 +168,7 @@ export default function FinanceEngine() {
         <AddTransactionModal
           type={showAdd}
           cycles={cycles}
-          onSave={tx => { addTransaction(tx); setShowAdd(null); }}
+          onSave={tx => addTransaction(tx)}
           onClose={() => setShowAdd(null)}
         />
       )}
@@ -246,7 +177,7 @@ export default function FinanceEngine() {
           type={editingTx.type}
           cycles={cycles}
           initial={editingTx}
-          onSave={tx => { updateTransaction(editingTx.id, tx); setEditingTx(null); }}
+          onSave={tx => updateTransaction(editingTx.id, tx)}
           onClose={() => setEditingTx(null)}
         />
       )}
