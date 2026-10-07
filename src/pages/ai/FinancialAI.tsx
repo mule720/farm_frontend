@@ -312,12 +312,9 @@ export default function FinancialAIModule() {
 
   // ── Pull real data from Finance Engine localStorage ───────────────────────
   const txs: any[] = useTransactions();
-  const orders: any[] = useMemo(() => {
-    try { return JSON.parse(localStorage.getItem('agronexus_v2_orders') ?? '[]'); } catch { return []; }
-  }, []);
 
-  const totalIncome  = txs.filter((t: any) => t.type === 'income').reduce((s: number, t: any) => s + t.amount, 0)
-                     + orders.filter((o: any) => o.status !== 'cancelled').reduce((s: number, o: any) => s + o.total, 0);
+  // Fulfilled sales orders post their income to the ledger, so the ledger alone is the income
+  const totalIncome  = txs.filter((t: any) => t.type === 'income').reduce((s: number, t: any) => s + t.amount, 0);
   const totalExpense = txs.filter((t: any) => t.type === 'expense').reduce((s: number, t: any) => s + t.amount, 0);
   const netProfit    = totalIncome - totalExpense;
 
@@ -346,7 +343,7 @@ export default function FinancialAIModule() {
   }, [txs]);
 
   const hasCycles = cycles.length > 0;
-  const hasFinanceData = txs.length > 0 || orders.length > 0;
+  const hasFinanceData = txs.length > 0;
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto overflow-y-auto h-full">

@@ -5,146 +5,33 @@
 import React, { useState, useMemo } from 'react';
 import {
   Plus, X, ShoppingCart, User, FileText, CheckCircle2,
-  Clock, AlertCircle, Search, ChevronRight, DollarSign,
+  Clock, AlertCircle, Search, ChevronRight, DollarSign, Lock, RefreshCw,
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-import { emit, type StockOutPayload } from '@/lib/bus';
-import { postFinance } from '@/lib/financeStore';
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-type OrderStatus    = 'draft' | 'confirmed' | 'fulfilled' | 'cancelled';
-type PaymentStatus  = 'unpaid' | 'partial' | 'paid' | 'overdue';
-type CustomerType   = 'individual' | 'business' | 'wholesale' | 'export';
-
-interface Customer {
-  id: string;
-  name: string;
-  type: CustomerType;
-  phone?: string;
-  email?: string;
-  address?: string;
-  notes?: string;
-  createdAt: string;
-}
-
-interface OrderLine {
-  id: string;
-  description: string;
-  qty: number;
-  unit: string;
-  unitPrice: number;
-}
-
-interface SaleOrder {
-  id: string;
-  orderNumber: string;
-  customerId: string;
-  customerName: string;
-  date: string;
-  dueDate?: string;
-  status: OrderStatus;
-  paymentStatus: PaymentStatus;
-  lines: OrderLine[];
-  subtotal: number;
-  taxPct?: number;
-  discountAmt?: number;
-  total: number;
-  amountPaid: number;
-  cycleRef?: string;       // links revenue to a production cycle for P&L attribution
-  notes?: string;
-  createdAt: string;
-}
-
-// ─── Storage ─────────────────────────────────────────────────────────────────
-const CUST_KEY   = 'agronexus_v2_customers';
-const ORDERS_KEY = 'agronexus_v2_orders';
+import {
+  useSalesStore, saveCustomer, deleteCustomer as removeCustomer, createOrder, updateOrder as saveOrder,
+  recordPayment as savePayment,
+  type Customer, type CustomerType, type NewOrder, type OrderLine, type OrderStatus, type PaymentStatus, type SaleOrder,
+} from '@/lib/salesStore';
 
 function calcTotal(lines: OrderLine[], taxPct = 0, discountAmt = 0) {
   const sub = lines.reduce((s, l) => s + l.qty * l.unitPrice, 0);
   return Math.max(0, sub * (1 + taxPct / 100) - discountAmt);
 }
 
-function useSales() {
-  const [customers, setCustomers] = useState<Customer[]>(() => {
-    try { return JSON.parse(localStorage.getItem(CUST_KEY) ?? '[]'); } catch { return []; }
-  });
-  const [orders, setOrders] = useState<SaleOrder[]>(() => {
-    try { return JSON.parse(localStorage.getItem(ORDERS_KEY) ?? '[]'); } catch { return []; }
-  });
-  React.useEffect(() => { localStorage.setItem(CUST_KEY,   JSON.stringify(customers)); }, [customers]);
-  React.useEffect(() => { localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));    }, [orders]);
-
-  function addCustomer(c: Omit<Customer, 'id' | 'createdAt'>) {
-    const cust = { ...c, id: uuidv4(), createdAt: new Date().toISOString() };
-    setCustomers(prev => [...prev, cust]);
-    return cust;
-  }
-  function updateCustomer(id: string, patch: Partial<Customer>) {
-    setCustomers(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));
-  }
-  function deleteCustomer(id: string) {
-    setCustomers(prev => prev.filter(c => c.id !== id));
-  }
-  function addOrder(o: Omit<SaleOrder, 'id' | 'createdAt'>) {
-    const order = { ...o, id: uuidv4(), createdAt: new Date().toISOString() };
-    setOrders(prev => [...prev, order]);
-    return order;
-  }
-  function updateOrder(id: string, patch: Partial<SaleOrder>) {
-    setOrders(prev => {
-      const old = prev.find(o => o.id === id);
-      const updated = prev.map(o => o.id === id ? { ...o, ...patch } : o);
-      const next = updated.find(o => o.id === id);
-      if (!old || !next) return updated;
-
-      const today = new Date().toISOString().slice(0, 10);
-
-      // ── Order confirmed → reserve/stock_out inventory per line ─────────────
-      if (old.status !== 'fulfilled' && next.status === 'fulfilled') {
-        next.lines.forEach(line => {
-          // materialTypeId is a slug so InventoryEngine can match by name
-          const slug = line.description.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-          emit<StockOutPayload>('inventory:stock_out', {
-            materialName: line.description,
-            materialTypeId: slug,
-            quantity: line.qty,
-            unit: line.unit,
-            reason: `Sale order ${next.orderNumber} to ${next.customerName}`,
-            reference: next.orderNumber,
-            destination: next.customerName,
-            date: today,
-          }, 'sales');
-        });
-
-        // Record the income in the farm ledger (posted once per order, however often this runs)
-        postFinance('sales', [{
-          sourceRef: `sale:${next.id}`, type: 'income', category: 'sale_income',
-          description: `Sales order ${next.orderNumber} — ${next.customerName}`,
-          amount: next.total, date: today, cycleRef: next.cycleRef, reference: next.orderNumber,
-          notes: 'Auto-recorded from sales',
-        }]);
-      }
-
-      return updated;
-    });
-  }
-  function recordPayment(orderId: string, amount: number) {
-    setOrders(prev => prev.map(o => {
-      if (o.id !== orderId) return o;
-      const paid = o.amountPaid + amount;
-      const paymentStatus: PaymentStatus = paid >= o.total ? 'paid' : paid > 0 ? 'partial' : 'unpaid';
-      return { ...o, amountPaid: paid, paymentStatus };
-    }));
-  }
-
-  return { customers, orders, addCustomer, updateCustomer, deleteCustomer, addOrder, updateOrder, recordPayment };
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Root
 // ─────────────────────────────────────────────────────────────────────────────
 export default function SalesEngine() {
-  const { customers, orders, addCustomer, updateCustomer, deleteCustomer, addOrder, updateOrder, recordPayment } = useSales();
+  const { customers, orders, status, error, reload } = useSalesStore();
+  const [actionError, setActionError] = useState('');
+  // Every change goes to the company account; show what the server said if it refuses
+  async function run(fn: () => Promise<unknown>, onOk?: () => void) {
+    setActionError('');
+    try { await fn(); onOk?.(); }
+    catch (e) { setActionError(String((e as any)?.message ?? e)); }
+  }
+  const updateOrder = (id: string, patch: { status?: OrderStatus; notes?: string }) => run(() => saveOrder(id, patch));
   const [tab, setTab] = useState<'orders' | 'customers'>('orders');
   const [search, setSearch] = useState('');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
@@ -190,8 +77,8 @@ export default function SalesEngine() {
               ))}
             </div>
             <button
-              onClick={() => tab === 'orders' ? setShowNewOrder(true) : setShowNewCustomer(true)}
-              className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-medium hover:bg-emerald-700">
+              onClick={() => tab === 'orders' ? setShowNewOrder(true) : setShowNewCustomer(true)} disabled={status !== 'ready'}
+              className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-medium hover:bg-emerald-700 disabled:opacity-40">
               <Plus className="w-3.5 h-3.5" /> {tab === 'orders' ? 'New Order' : 'Add Customer'}
             </button>
           </div>
@@ -203,7 +90,30 @@ export default function SalesEngine() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
-          {tab === 'orders' && (
+          {actionError && (
+            <div className="mb-2 flex items-start gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              <span className="flex-1">{actionError}</span>
+              <button onClick={() => setActionError('')} aria-label="Dismiss"><X className="w-3.5 h-3.5" /></button>
+            </div>
+          )}
+          {status === 'denied' && (
+            <div className="text-center py-12 px-4">
+              <Lock className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+              <p className="text-sm font-semibold text-slate-700">You do not have access to Sales</p>
+              <p className="text-xs text-slate-500 mt-1">Ask an owner or administrator of your company to give you access under Team &amp; Permissions.</p>
+            </div>
+          )}
+          {status === 'error' && (
+            <div className="text-center py-12 px-4">
+              <p className="text-sm font-semibold text-slate-700">Sales could not be loaded</p>
+              <p className="text-xs text-slate-500 mt-1 break-words">{error}</p>
+              <button onClick={() => { void reload(); }} className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700">
+                <RefreshCw className="w-4 h-4" /> Try again
+              </button>
+            </div>
+          )}
+          {(status === 'idle' || status === 'loading') && <div className="text-center py-12 text-sm text-slate-400">Loading your sales…</div>}
+          {status === 'ready' && tab === 'orders' && (
             <>
               {filteredOrders.length === 0 && <EmptyMsg icon={<ShoppingCart />} msg="No orders yet." />}
               {filteredOrders
@@ -211,7 +121,7 @@ export default function SalesEngine() {
                 .map(o => <OrderRow key={o.id} order={o} selected={selectedOrderId === o.id} onClick={() => { setSelectedOrderId(o.id); setTab('orders'); }} />)}
             </>
           )}
-          {tab === 'customers' && (
+          {status === 'ready' && tab === 'customers' && (
             <>
               {filteredCustomers.length === 0 && <EmptyMsg icon={<User />} msg="No customers yet." />}
               {filteredCustomers.map(c => (
@@ -246,8 +156,7 @@ export default function SalesEngine() {
                 onEdit={() => setEditingCustomer(selCust)}
                 onDelete={() => {
                   if (window.confirm(`Delete ${selCust.name}? Their orders will remain.`)) {
-                    deleteCustomer(selCust.id);
-                    setSelectedCustomerId(null);
+                    void run(() => removeCustomer(selCust.id), () => setSelectedCustomerId(null));
                   }
                 }}
               />
@@ -264,28 +173,27 @@ export default function SalesEngine() {
       {showNewOrder && (
         <NewOrderModal
           customers={customers}
-          onAddCustomer={addCustomer}
-          onSave={data => { const o = addOrder(data); setSelectedOrderId(o.id); setShowNewOrder(false); }}
+          onSave={async data => { const o = await createOrder(data); setSelectedOrderId(o.id); setShowNewOrder(false); }}
           onClose={() => setShowNewOrder(false)}
         />
       )}
       {showNewCustomer && (
         <AddCustomerModal
-          onSave={data => { addCustomer(data); setShowNewCustomer(false); }}
+          onSave={async data => { await saveCustomer(data); setShowNewCustomer(false); }}
           onClose={() => setShowNewCustomer(false)}
         />
       )}
       {editingCustomer && (
         <AddCustomerModal
           initial={editingCustomer}
-          onSave={data => { updateCustomer(editingCustomer.id, data); setEditingCustomer(null); }}
+          onSave={async data => { await saveCustomer(data, editingCustomer.id); setEditingCustomer(null); }}
           onClose={() => setEditingCustomer(null)}
         />
       )}
       {payModal && (
         <PaymentModal
           order={orders.find(o => o.id === payModal)!}
-          onSave={amount => { recordPayment(payModal, amount); setPayModal(null); }}
+          onSave={async (amount, note) => { await savePayment(payModal, amount, note); setPayModal(null); }}
           onClose={() => setPayModal(null)}
         />
       )}
@@ -498,7 +406,7 @@ function OrderDetail({ order, onClose, onUpdate, onRecordPayment }: {
           <div className="max-w-md space-y-3">
             <textarea className="w-full border border-slate-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 resize-none" rows={5}
               defaultValue={order.notes ?? ''} placeholder="Order notes…"
-              onBlur={e => onUpdate({ notes: e.target.value || undefined })} />
+              onBlur={e => { if (e.target.value !== (order.notes ?? '')) onUpdate({ notes: e.target.value }); }} />
           </div>
         )}
       </div>
@@ -567,9 +475,26 @@ function PaymentsView({ order }: { order: SaleOrder }) {
           <Row label="Balance Due"    value={(order.total - order.amountPaid).toFixed(2)} color="text-red-500" bold />
         </div>
       </div>
-      <div className="bg-slate-100 rounded-xl p-4 text-xs text-slate-500">
-        Use the "Record Payment" button above to log a payment received.
-      </div>
+      {order.payments.length > 0 ? (
+        <div className="bg-white rounded-xl border border-slate-200 p-4">
+          <div className="text-sm font-semibold text-slate-800 mb-3">Payments received ({order.payments.length})</div>
+          <div className="space-y-2">
+            {order.payments.map(p => (
+              <div key={p.id} className="flex items-start justify-between gap-3 text-xs">
+                <div className="min-w-0">
+                  <div className="text-slate-700 font-medium">{new Date(p.paidOn).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+                  <div className="text-slate-400 truncate">{[p.note, p.recordedBy].filter(Boolean).join(' · ')}</div>
+                </div>
+                <div className="font-semibold text-green-600 flex-shrink-0">{p.amount.toFixed(2)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="bg-slate-100 rounded-xl p-4 text-xs text-slate-500">
+          Use the "Record Payment" button above to log a payment received.
+        </div>
+      )}
     </div>
   );
 }
@@ -582,12 +507,12 @@ function Row({ label, value, color = 'text-slate-700', bold = false }: { label: 
 }
 
 // ─── New Order Modal ──────────────────────────────────────────────────────────
-function NewOrderModal({ customers, onAddCustomer, onSave, onClose }: {
+function NewOrderModal({ customers, onSave, onClose }: {
   customers: Customer[];
-  onAddCustomer: (c: Omit<Customer, 'id' | 'createdAt'>) => Customer;
-  onSave: (o: Omit<SaleOrder, 'id' | 'createdAt'>) => void;
+  onSave: (o: NewOrder) => Promise<void>;
   onClose: () => void;
 }) {
+  const { saving, error, submit } = useSubmit();
   const [customerId, setCustomerId] = useState(customers[0]?.id ?? '');
   const [newCustName, setNewCustName] = useState('');
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
@@ -597,7 +522,6 @@ function NewOrderModal({ customers, onAddCustomer, onSave, onClose }: {
   const [lines, setLines] = useState<OrderLine[]>([{ id: uuidv4(), description: '', qty: 1, unit: 'kg', unitPrice: 0 }]);
   const [useNewCust, setUseNewCust] = useState(customers.length === 0);
 
-  const orderNum = `ORD-${new Date().toISOString().slice(0, 7).replace('-', '')}-${String(Math.floor(Math.random() * 900) + 100)}`;
   const total = calcTotal(lines, parseFloat(taxPct) || 0, parseFloat(discountAmt) || 0);
   const subtotal = lines.reduce((s, l) => s + l.qty * l.unitPrice, 0);
 
@@ -606,17 +530,12 @@ function NewOrderModal({ customers, onAddCustomer, onSave, onClose }: {
   function updateLine(id: string, patch: Partial<OrderLine>) { setLines(l => l.map(x => x.id === id ? { ...x, ...patch } : x)); }
 
   function save() {
-    let custId = customerId;
-    let custName = customers.find(c => c.id === customerId)?.name ?? '';
-    if (useNewCust && newCustName.trim()) {
-      const c = onAddCustomer({ name: newCustName.trim(), type: 'individual' });
-      custId = c.id; custName = c.name;
-    }
-    onSave({
-      orderNumber: orderNum, customerId: custId, customerName: custName, date, dueDate: dueDate || undefined,
-      status: 'draft', paymentStatus: 'unpaid', lines, subtotal, taxPct: parseFloat(taxPct) || undefined,
-      discountAmt: parseFloat(discountAmt) || undefined, total, amountPaid: 0,
-    });
+    const adding = useNewCust && newCustName.trim();
+    void submit(() => onSave({
+      customerId: adding ? undefined : customerId || undefined, newCustomerName: adding ? newCustName.trim() : undefined,
+      date, dueDate: dueDate || undefined, lines: lines.filter(l => l.description.trim()),
+      taxPct: parseFloat(taxPct) || undefined, discountAmt: parseFloat(discountAmt) || undefined,
+    }));
   }
 
   return (
@@ -678,6 +597,7 @@ function NewOrderModal({ customers, onAddCustomer, onSave, onClose }: {
               <input type="number" step="any" className={INP} placeholder="0.00" value={discountAmt} onChange={e => setDiscountAmt(e.target.value)} /></div>
           </div>
 
+          {error && <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">{error}</div>}
           <div className="bg-slate-50 rounded-xl p-3 text-sm">
             <div className="flex justify-between text-slate-500"><span>Subtotal</span><span>{subtotal.toFixed(2)}</span></div>
             <div className="flex justify-between font-bold text-slate-900 mt-1 pt-1 border-t border-slate-200"><span>Total</span><span>{total.toFixed(2)}</span></div>
@@ -685,9 +605,9 @@ function NewOrderModal({ customers, onAddCustomer, onSave, onClose }: {
         </div>
         <div className="px-5 py-4 border-t border-slate-100 flex gap-3 flex-shrink-0">
           <button onClick={onClose} className="flex-1 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
-          <button onClick={save} disabled={lines.every(l => !l.description.trim())}
+          <button onClick={save} disabled={saving || lines.every(l => !l.description.trim()) || (useNewCust ? !newCustName.trim() : !customerId)}
             className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">
-            Create Order
+            {saving ? 'Saving…' : 'Create Order'}
           </button>
         </div>
       </div>
@@ -696,7 +616,8 @@ function NewOrderModal({ customers, onAddCustomer, onSave, onClose }: {
 }
 
 // ─── Add Customer Modal ────────────────────────────────────────────────────────
-function AddCustomerModal({ onSave, onClose, initial }: { onSave: (c: Omit<Customer, 'id' | 'createdAt'>) => void; onClose: () => void; initial?: Customer }) {
+function AddCustomerModal({ onSave, onClose, initial }: { onSave: (c: Omit<Customer, 'id' | 'createdAt'>) => Promise<void>; onClose: () => void; initial?: Customer }) {
+  const { saving, error, submit } = useSubmit();
   const [form, setForm] = useState<Omit<Customer, 'id' | 'createdAt'>>({ name: initial?.name ?? '', type: initial?.type ?? 'individual', phone: initial?.phone, email: initial?.email, address: initial?.address, notes: initial?.notes });
   function set(k: keyof typeof form, v: any) { setForm(f => ({ ...f, [k]: v })); }
   const isEdit = !!initial;
@@ -717,11 +638,12 @@ function AddCustomerModal({ onSave, onClose, initial }: { onSave: (c: Omit<Custo
           <div><label className="block text-xs font-medium text-slate-600 mb-1.5">Phone</label><input className={INP} placeholder="+260…" value={form.phone ?? ''} onChange={e => set('phone', e.target.value || undefined)} /></div>
           <div><label className="block text-xs font-medium text-slate-600 mb-1.5">Email</label><input type="email" className={INP} value={form.email ?? ''} onChange={e => set('email', e.target.value || undefined)} /></div>
           <div><label className="block text-xs font-medium text-slate-600 mb-1.5">Address</label><textarea className={INP + ' resize-none'} rows={2} value={form.address ?? ''} onChange={e => set('address', e.target.value || undefined)} /></div>
+          {error && <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">{error}</div>}
         </div>
         <div className="px-5 py-4 border-t border-slate-100 flex gap-3">
           <button onClick={onClose} className="flex-1 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-600">Cancel</button>
-          <button onClick={() => onSave(form)} disabled={!form.name.trim()}
-            className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">{isEdit ? 'Save Changes' : 'Add'}</button>
+          <button onClick={() => { void submit(() => onSave(form)); }} disabled={saving || !form.name.trim()}
+            className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">{saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Add'}</button>
         </div>
       </div>
     </div>
@@ -729,9 +651,11 @@ function AddCustomerModal({ onSave, onClose, initial }: { onSave: (c: Omit<Custo
 }
 
 // ─── Payment Modal ─────────────────────────────────────────────────────────────
-function PaymentModal({ order, onSave, onClose }: { order: SaleOrder; onSave: (amount: number) => void; onClose: () => void }) {
+function PaymentModal({ order, onSave, onClose }: { order: SaleOrder; onSave: (amount: number, note?: string) => Promise<void>; onClose: () => void }) {
+  const { saving, error, submit } = useSubmit();
   const outstanding = order.total - order.amountPaid;
   const [amount, setAmount] = useState(String(outstanding.toFixed(2)));
+  const [note, setNote] = useState('');
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-sm">
@@ -745,11 +669,14 @@ function PaymentModal({ order, onSave, onClose }: { order: SaleOrder; onSave: (a
           </div>
           <div><label className="block text-xs font-medium text-slate-600 mb-1.5">Amount Received</label>
             <input type="number" step="any" className={INP} value={amount} onChange={e => setAmount(e.target.value)} /></div>
+          <div><label className="block text-xs font-medium text-slate-600 mb-1.5">Note (opt.)</label>
+            <input className={INP} placeholder="Cash, mobile money, bank transfer…" value={note} onChange={e => setNote(e.target.value)} /></div>
+          {error && <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">{error}</div>}
         </div>
         <div className="px-5 py-4 border-t border-slate-100 flex gap-3">
           <button onClick={onClose} className="flex-1 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-600">Cancel</button>
-          <button onClick={() => onSave(parseFloat(amount) || 0)} disabled={!amount || parseFloat(amount) <= 0}
-            className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">Record</button>
+          <button onClick={() => { void submit(() => onSave(parseFloat(amount) || 0, note.trim() || undefined)); }} disabled={saving || !amount || parseFloat(amount) <= 0}
+            className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">{saving ? 'Saving…' : 'Record'}</button>
         </div>
       </div>
     </div>
@@ -757,6 +684,18 @@ function PaymentModal({ order, onSave, onClose }: { order: SaleOrder; onSave: (a
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+/** Run a save from a dialog: block double-clicks and keep any server error visible in the dialog. */
+function useSubmit() {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  async function submit(fn: () => Promise<void>) {
+    setSaving(true); setError('');
+    try { await fn(); }
+    catch (e) { setError(String((e as any)?.message ?? e)); setSaving(false); }
+  }
+  return { saving, error, submit };
+}
+
 const INP = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400';
 
 function MiniStat({ label, value, color }: { label: string; value: string; color: string }) {

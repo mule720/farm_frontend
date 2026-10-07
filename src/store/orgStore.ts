@@ -12,6 +12,7 @@ import { getTemplate, setCustomTemplates } from '@/lib/templates';
 import { emit, type StockInPayload, type EggsSetPayload } from '@/lib/bus';
 import { gqlRequest } from '@/lib/api';
 import { postFinance, setFinanceAccount, inferCostCategory } from '@/lib/financeStore';
+import { setSalesAccount } from '@/lib/salesStore';
 import { useAuth } from '@/contexts/AuthContext';
 
 // ─── State shape ──────────────────────────────────────────────────────────────
@@ -187,7 +188,7 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
   const ready = hydratedFor !== null && hydratedFor === (accountOrgId ?? '');
 
   // The finance ledger is per company, held on the server
-  useEffect(() => { setFinanceAccount(accountOrgId); }, [accountOrgId]);
+  useEffect(() => { setFinanceAccount(accountOrgId); setSalesAccount(accountOrgId); }, [accountOrgId]);
 
   // Make the company's saved templates visible to every getTemplate() caller.
   // Done during render so children never see a stale list.

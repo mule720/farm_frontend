@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useOrg } from '@/store/orgStore';
 import { useTransactions } from '@/lib/financeStore';
+import { useOrders } from '@/lib/salesStore';
 import { getTemplate } from '@/lib/templates';
 import { exportCSV, backupAll } from '@/lib/exportUtils';
 
@@ -272,7 +273,7 @@ export default function ReportsEngine() {
 
   // ── LS reads (all at top, useMemo with [] deps) ──────────────────────────
   const txs: any[] = useTransactions();
-  const orders = useMemo<any[]>(() => { try { return JSON.parse(localStorage.getItem('agronexus_v2_orders') ?? '[]') as any[]; } catch { return []; } }, []);
+  const orders: any[] = useOrders();
   const invItems = useMemo<any[]>(() => { try { return JSON.parse(localStorage.getItem('agronexus_v2_inventory_items') ?? '[]') as any[]; } catch { return []; } }, []);
   const batches = useMemo<any[]>(() => { try { return JSON.parse(localStorage.getItem('agronexus_v2_batches') ?? '[]') as any[]; } catch { return []; } }, []);
   const hrStaff = useMemo<any[]>(() => { try { return JSON.parse(localStorage.getItem('agronexus_v2_hr_staff') ?? '[]') as any[]; } catch { return []; } }, []);
@@ -772,7 +773,8 @@ export default function ReportsEngine() {
         {activeTab === 'finance' && (() => {
           // ── Finance computed values (inline IIFE to avoid top-level hooks) ──
           const totalProdExp = prodExpState.reduce((s, e) => s + e.amount, 0);
-          const farmTotalRevenue = totalIncome + orders.reduce((s: number, o: any) => s + (o.total ?? 0), 0);
+          // Fulfilled sales orders post their income to the ledger, so the ledger alone is the revenue
+          const farmTotalRevenue = totalIncome;
           const farmNet = farmTotalRevenue - totalExpense - totalProdExp;
 
           const formCycles = expForm.enterpriseId
@@ -781,10 +783,9 @@ export default function ReportsEngine() {
 
           const enterpriseProfitData = (org?.enterprises ?? []).map((ent: any) => {
             const entCycleIds = new Set(cycles.filter((c: any) => c.enterpriseId === ent.id).map((c: any) => c.id));
-            const entIncome = filteredTxs.filter(t => t.type === 'income' && entCycleIds.has(t.cycleId)).reduce((s: number, t: any) => s + (t.amount ?? 0), 0)
-              + orders.filter((o: any) => o.enterpriseId === ent.id).reduce((s: number, o: any) => s + (o.total ?? 0), 0);
+            const entIncome = filteredTxs.filter((t: any) => t.type === 'income' && entCycleIds.has(t.cycleRef ?? t.cycleId)).reduce((s: number, t: any) => s + (t.amount ?? 0), 0);
             const entProdExp = prodExpState.filter(e => e.enterpriseId === ent.id).reduce((s, e) => s + e.amount, 0);
-            const entOtherExp = filteredTxs.filter(t => t.type === 'expense' && entCycleIds.has(t.cycleId)).reduce((s: number, t: any) => s + (t.amount ?? 0), 0);
+            const entOtherExp = filteredTxs.filter((t: any) => t.type === 'expense' && entCycleIds.has(t.cycleRef ?? t.cycleId)).reduce((s: number, t: any) => s + (t.amount ?? 0), 0);
             const net = entIncome - entProdExp - entOtherExp;
             const margin = entIncome > 0 ? (net / entIncome * 100) : 0;
 

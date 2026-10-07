@@ -164,7 +164,6 @@ export default function DynamicDashboard({ onNavigate }: { onNavigate: (page: st
 
   // ── LS reads — all at top level with [] deps ──────────────────────────────
   const txs         = useTransactions() as unknown as Tx[];
-  const orders      = useMemo(() => lsGet<Order>('agronexus_v2_orders'), []);
   const invItems    = useMemo(() => lsGet<InvItem>('agronexus_v2_inventory_items'), []);
   const aquaPonds   = useMemo(() => lsGet<AquaPond>('agronexus_v2_aqua_ponds'), []);
   const phHouses    = useMemo(() => lsGet<PhHouse>('agronexus_v2_ph_houses'), []);
@@ -191,8 +190,8 @@ export default function DynamicDashboard({ onNavigate }: { onNavigate: (page: st
   const totalActiveCycles = cycles.filter(c => c.status === 'active').length;
 
   // ── Financial KPIs ────────────────────────────────────────────────────────
-  const totalIncome = txs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)
-    + orders.filter(o => o.status !== 'cancelled').reduce((s, o) => s + o.total, 0);
+  // Fulfilled sales orders post their income to the ledger, so the ledger alone is the income
+  const totalIncome = txs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const totalExpense = txs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
   const netProfit = totalIncome - totalExpense;
   const profitMargin = totalIncome > 0 ? (netProfit / totalIncome) * 100 : 0;
@@ -223,13 +222,8 @@ export default function DynamicDashboard({ onNavigate }: { onNavigate: (page: st
       if (t.type === 'income') m.income += t.amount;
       else m.expense += t.amount;
     });
-    orders.filter(o => o.status !== 'cancelled').forEach(o => {
-      const key = o.date?.slice(0, 7);
-      const m = months.find(m => m.key === key);
-      if (m) m.income += o.total;
-    });
     return months;
-  }, [txs, orders]);
+  }, [txs]);
 
   const maxBarVal = Math.max(...monthlyPL.flatMap(m => [m.income, m.expense]), 1);
 
@@ -301,7 +295,7 @@ export default function DynamicDashboard({ onNavigate }: { onNavigate: (page: st
       {/* ── 2. Command Strip — 8 KPI cards ─────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <CommandKPI label="Total Revenue" value={`${currency} ${fmtMoney(totalIncome)}`}
-          subtitle="Income + orders" accent="border-green-500"
+          subtitle="Recorded income" accent="border-green-500"
           trend={totalIncome > 0 ? 'up' : null} />
         <CommandKPI label="Total Expenses" value={`${currency} ${fmtMoney(totalExpense)}`}
           subtitle="All recorded costs" accent="border-red-400"

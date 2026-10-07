@@ -260,6 +260,11 @@ async function refresh() {
   set({ transactions: [...waiting, ...data.farmTransactions.map(mapRow)], status: 'ready', error: '' });
 }
 
+/** Re-read the ledger if it has been loaded (e.g. after the server posted an entry on its own). */
+export function reloadFinanceIfLoaded(): Promise<void> {
+  return state.status === 'ready' ? refresh().catch(() => undefined) : Promise.resolve();
+}
+
 let loading: Promise<void> | null = null;
 
 /** Load the ledger from the server (once per sign-in; call reload() to force). */
