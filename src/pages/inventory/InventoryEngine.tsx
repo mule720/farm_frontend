@@ -5,218 +5,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   Plus, X, Package, ArrowDown, ArrowUp, ArrowLeftRight,
-  Search, ChevronRight, BarChart3, MapPin, Filter,
+  Search, Lock, RefreshCw,
 } from 'lucide-react';
-import { v4 as uuidv4 } from 'uuid';
-import { consume, type StockInPayload, type StockOutPayload } from '@/lib/bus';
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-type MaterialCategory = 'feed' | 'medicine' | 'seed' | 'fertiliser' | 'chemical' | 'equipment' | 'packaging' | 'produce' | 'processed' | 'other';
-type MovementType = 'in' | 'out' | 'adjustment' | 'transfer';
-
-interface InventoryItem {
-  id: string;
-  name: string;
-  sku: string;
-  category: MaterialCategory;
-  unit: string;
-  currentQty: number;
-  minStockLevel: number;
-  costPerUnit?: number;
-  location?: string;
-  supplier?: string;
-  expiryDate?: string;
-  notes?: string;
-  createdAt: string;
-}
-
-interface StockMovement {
-  id: string;
-  itemId: string;
-  type: MovementType;
-  qty: number;
-  date: string;
-  reference?: string;       // batch #, cycle #, PO #
-  destination?: string;     // for transfers
-  unitCost?: number;
-  notes?: string;
-  createdAt: string;
-}
-
-// ─── Storage ─────────────────────────────────────────────────────────────────
-const ITEMS_KEY = 'agronexus_v2_inventory_items';
-const MOVES_KEY = 'agronexus_v2_inventory_moves';
-
-function useInventory() {
-  const [items, setItems] = useState<InventoryItem[]>(() => {
-    try { return JSON.parse(localStorage.getItem(ITEMS_KEY) ?? '[]'); } catch { return []; }
-  });
-  const [movements, setMovements] = useState<StockMovement[]>(() => {
-    try { return JSON.parse(localStorage.getItem(MOVES_KEY) ?? '[]'); } catch { return []; }
-  });
-
-  React.useEffect(() => { localStorage.setItem(ITEMS_KEY, JSON.stringify(items)); }, [items]);
-  React.useEffect(() => { localStorage.setItem(MOVES_KEY, JSON.stringify(movements)); }, [movements]);
-
-  function addItem(item: Omit<InventoryItem, 'id' | 'createdAt'>) {
-    const newItem = { ...item, id: uuidv4(), createdAt: new Date().toISOString() };
-    setItems(prev => [...prev, newItem]);
-    return newItem;
-  }
-  function updateItem(id: string, patch: Partial<InventoryItem>) {
-    setItems(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i));
-  }
-  function deleteItem(id: string) {
-    setItems(prev => prev.filter(i => i.id !== id));
-  }
-  function recordMovement(move: Omit<StockMovement, 'id' | 'createdAt'>) {
-    const m = { ...move, id: uuidv4(), createdAt: new Date().toISOString() };
-    setMovements(prev => [...prev, m]);
-    // Update currentQty
-    setItems(prev => prev.map(item => {
-      if (item.id !== move.itemId) return item;
-      const delta = move.type === 'in' ? move.qty : move.type === 'out' ? -move.qty : move.type === 'adjustment' ? move.qty : -move.qty;
-      return { ...item, currentQty: Math.max(0, item.currentQty + delta) };
-    }));
-    return m;
-  }
-  function getItemMovements(itemId: string) {
-    return movements.filter(m => m.itemId === itemId).sort((a, b) => b.date.localeCompare(a.date));
-  }
-
-  // ─── Consume bus events ──────────────────────────────────────────────────────
-  // Runs on mount and every 10 s to drain pending stock_in events from Production Engine
-  useEffect(() => {
-    function drainBus() {
-      // ── Stock In ────────────────────────────────────────────────────────────
-      const ins = consume<StockInPayload>('inventory:stock_in');
-      if (ins.length > 0) {
-        setItems(prevItems => {
-          let updatedItems = [...prevItems];
-          const newMovements: StockMovement[] = [];
-
-          ins.forEach(payload => {
-            const slug = payload.materialName.toLowerCase().replace(/\s+/g, '-');
-            // Try to find an existing item by slug-matching the name
-            const existing = updatedItems.find(
-              i => i.name.toLowerCase().replace(/\s+/g, '-') === slug ||
-                   i.sku === slug
-            );
-
-            if (existing) {
-              // Update qty on existing item
-              const delta = payload.quantity;
-              updatedItems = updatedItems.map(i =>
-                i.id === existing.id ? { ...i, currentQty: i.currentQty + delta } : i
-              );
-              newMovements.push({
-                id: uuidv4(),
-                itemId: existing.id,
-                type: 'in',
-                qty: payload.quantity,
-                date: payload.date,
-                reference: payload.cycleRef ?? payload.eventRef,
-                unitCost: payload.costPerUnit,
-                notes: `Auto: from production bus (${payload.cycleRef ?? ''})`,
-                createdAt: new Date().toISOString(),
-              });
-            } else {
-              // Auto-create new inventory item
-              const newId = uuidv4();
-              const inferred = inferCategory(payload.materialName);
-              updatedItems.push({
-                id: newId,
-                name: payload.materialName,
-                sku: slug,
-                category: inferred,
-                unit: payload.unit,
-                currentQty: payload.quantity,
-                minStockLevel: 0,
-                costPerUnit: payload.costPerUnit,
-                location: undefined,
-                notes: `Auto-created from production event. Cycle: ${payload.cycleRef ?? 'unknown'}`,
-                createdAt: new Date().toISOString(),
-              });
-              newMovements.push({
-                id: uuidv4(),
-                itemId: newId,
-                type: 'in',
-                qty: payload.quantity,
-                date: payload.date,
-                reference: payload.cycleRef ?? payload.eventRef,
-                unitCost: payload.costPerUnit,
-                notes: 'Initial stock from production engine',
-                createdAt: new Date().toISOString(),
-              });
-            }
-          });
-
-          if (newMovements.length > 0) {
-            setMovements(prev => [...prev, ...newMovements]);
-          }
-          return updatedItems;
-        });
-      }
-
-      // ── Stock Out ───────────────────────────────────────────────────────────
-      const outs = consume<StockOutPayload>('inventory:stock_out');
-      if (outs.length > 0) {
-        setItems(prevItems => {
-          let updatedItems = [...prevItems];
-          const newMovements: StockMovement[] = [];
-
-          outs.forEach(payload => {
-            const existing = updatedItems.find(i =>
-              i.name.toLowerCase().replace(/\s+/g, '-') === payload.materialTypeId.toLowerCase()
-            );
-            if (!existing) return;
-
-            updatedItems = updatedItems.map(i =>
-              i.id === existing.id ? { ...i, currentQty: Math.max(0, i.currentQty - payload.quantity) } : i
-            );
-            newMovements.push({
-              id: uuidv4(),
-              itemId: existing.id,
-              type: 'out',
-              qty: payload.quantity,
-              date: payload.date,
-              reference: payload.cycleRef,
-              notes: `Auto: ${payload.reason ?? 'production out'} (${payload.destination ?? ''})`,
-              createdAt: new Date().toISOString(),
-            });
-          });
-
-          if (newMovements.length > 0) {
-            setMovements(prev => [...prev, ...newMovements]);
-          }
-          return updatedItems;
-        });
-      }
-    }
-
-    drainBus();
-    const interval = setInterval(drainBus, 10_000);
-    return () => clearInterval(interval);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return { items, movements, addItem, updateItem, deleteItem, recordMovement, getItemMovements };
-}
-
-// Infer category from material name for auto-created items
-function inferCategory(name: string): MaterialCategory {
-  const n = name.toLowerCase();
-  if (/feed|bran|meal|hay|silage|fodder/.test(n))    return 'feed';
-  if (/seed|grain|maize|wheat|soy|rice/.test(n))     return 'seed';
-  if (/vaccine|antibiotic|drug|medicine|deworm/.test(n)) return 'medicine';
-  if (/fertiliser|fertilizer|urea|npk|dap/.test(n)) return 'fertiliser';
-  if (/pesticide|herbicide|fungicide|chemical/.test(n)) return 'chemical';
-  if (/bag|box|crate|tray|sachet|packaging/.test(n)) return 'packaging';
-  if (/milk|egg|honey|wax|meat|fish|carcass/.test(n)) return 'produce';
-  if (/flour|oil|processed/.test(n))                return 'processed';
-  if (/pump|pipe|equipment|tool|net/.test(n))        return 'equipment';
-  return 'produce';   // default harvest outputs to produce
-}
+import {
+  useStockStore, addItem, updateItem as saveItem, deleteItem as removeItem, recordMovement, loadMovements,
+  type StockItem as InventoryItem, type StockMovement, type MovementType, type MaterialCategory, type ItemInput,
+} from '@/lib/inventoryStore';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Root
@@ -232,7 +26,14 @@ const CATEGORY_ICONS: Record<MaterialCategory, string> = {
 };
 
 export default function InventoryEngine() {
-  const { items, addItem, updateItem, deleteItem, recordMovement, getItemMovements } = useInventory();
+  const { items, movements, status, error, reload } = useStockStore();
+  const [actionError, setActionError] = useState('');
+  // Every change goes to the company account; show what the server said if it refuses
+  async function run(fn: () => Promise<unknown>, onOk?: () => void) {
+    setActionError('');
+    try { await fn(); onOk?.(); }
+    catch (e) { setActionError(String((e as any)?.message ?? e)); }
+  }
   const [search, setSearch] = useState('');
   const [filterCat, setFilterCat] = useState<MaterialCategory | 'all'>('all');
   const [filterStock, setFilterStock] = useState<'all' | 'low' | 'ok'>('all');
@@ -250,6 +51,9 @@ export default function InventoryEngine() {
   }, [items, search, filterCat, filterStock]);
 
   const selected = selectedId ? items.find(i => i.id === selectedId) : null;
+
+  // The history is loaded for the item that is open
+  useEffect(() => { if (selectedId) void loadMovements(selectedId).catch(() => undefined); }, [selectedId]);
   const lowStockCount = items.filter(i => i.currentQty <= i.minStockLevel).length;
 
   // Stats
@@ -266,8 +70,8 @@ export default function InventoryEngine() {
               <h2 className="font-bold text-slate-900">Inventory</h2>
               <p className="text-xs text-slate-500">{items.length} items · {lowStockCount > 0 && <span className="text-red-500">{lowStockCount} low</span>}</p>
             </div>
-            <button onClick={() => setShowAddItem(true)}
-              className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-medium hover:bg-indigo-700">
+            <button onClick={() => setShowAddItem(true)} disabled={status !== 'ready'}
+              className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-medium hover:bg-indigo-700 disabled:opacity-40">
               <Plus className="w-3.5 h-3.5" /> Add Item
             </button>
           </div>
@@ -299,13 +103,36 @@ export default function InventoryEngine() {
 
         {/* Item list */}
         <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
-          {filtered.length === 0 && (
+          {actionError && (
+            <div className="mb-2 flex items-start gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              <span className="flex-1">{actionError}</span>
+              <button onClick={() => setActionError('')} aria-label="Dismiss"><X className="w-3.5 h-3.5" /></button>
+            </div>
+          )}
+          {status === 'denied' && (
+            <div className="text-center py-12 px-4">
+              <Lock className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+              <p className="text-sm font-semibold text-slate-700">You do not have access to Inventory</p>
+              <p className="text-xs text-slate-500 mt-1">Ask an owner or administrator of your company to give you access under Team &amp; Permissions.</p>
+            </div>
+          )}
+          {status === 'error' && (
+            <div className="text-center py-12 px-4">
+              <p className="text-sm font-semibold text-slate-700">Inventory could not be loaded</p>
+              <p className="text-xs text-slate-500 mt-1 break-words">{error}</p>
+              <button onClick={() => { void reload(); }} className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700">
+                <RefreshCw className="w-4 h-4" /> Try again
+              </button>
+            </div>
+          )}
+          {(status === 'idle' || status === 'loading') && <div className="text-center py-12 text-sm text-slate-400">Loading your stock…</div>}
+          {status === 'ready' && filtered.length === 0 && (
             <div className="text-center py-12 text-slate-400">
               <Package className="w-8 h-8 mx-auto mb-3 opacity-25" />
               <p className="text-sm">{items.length === 0 ? 'No items yet.' : 'No matching items.'}</p>
             </div>
           )}
-          {filtered.map(item => (
+          {status === 'ready' && filtered.map(item => (
             <ItemRow key={item.id} item={item} selected={selectedId === item.id} onClick={() => setSelectedId(item.id)} />
           ))}
         </div>
@@ -324,10 +151,10 @@ export default function InventoryEngine() {
         {selected ? (
           <ItemDetail
             item={selected}
-            movements={getItemMovements(selected.id).slice(0, 50)}
+            movements={(movements[selected.id] ?? []).slice(0, 100)}
             onClose={() => setSelectedId(null)}
-            onUpdate={patch => updateItem(selected.id, patch)}
-            onDelete={() => { deleteItem(selected.id); setSelectedId(null); }}
+            onUpdate={async patch => { await saveItem(selected.id, patch); }}
+            onDelete={() => { void run(() => removeItem(selected.id), () => setSelectedId(null)); }}
             onRecordMovement={(type) => setShowMovement({ itemId: selected.id, type })}
           />
         ) : (
@@ -338,7 +165,7 @@ export default function InventoryEngine() {
       {/* Add Item Modal */}
       {showAddItem && (
         <AddItemModal
-          onSave={data => { addItem(data); setShowAddItem(false); }}
+          onSave={async data => { await addItem(data); setShowAddItem(false); }}
           onClose={() => setShowAddItem(false)}
         />
       )}
@@ -348,7 +175,7 @@ export default function InventoryEngine() {
         <MovementModal
           item={items.find(i => i.id === showMovement.itemId)!}
           type={showMovement.type}
-          onSave={move => { recordMovement(move); setShowMovement(null); }}
+          onSave={async move => { await recordMovement(move); setShowMovement(null); }}
           onClose={() => setShowMovement(null)}
         />
       )}
@@ -387,7 +214,7 @@ function ItemDetail({ item, movements, onClose, onUpdate, onDelete, onRecordMove
   item: InventoryItem;
   movements: StockMovement[];
   onClose: () => void;
-  onUpdate: (patch: Partial<InventoryItem>) => void;
+  onUpdate: (patch: ItemInput) => Promise<void>;
   onDelete: () => void;
   onRecordMovement: (type: MovementType) => void;
 }) {
@@ -506,7 +333,7 @@ function MovementsTab({ movements, item }: { movements: StockMovement[]; item: I
       )}
       {movements.map(m => {
         const cfg = MOV_CONFIG[m.type];
-        const sign = m.type === 'in' ? '+' : m.type === 'out' ? '-' : '±';
+        const sign = m.type === 'in' ? '+' : m.type === 'out' || m.type === 'transfer' ? '-' : m.qty >= 0 ? '+' : '';
         return (
           <div key={m.id} className="bg-white rounded-xl border border-slate-200 p-3.5 flex items-center gap-3">
             <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${m.type === 'in' ? 'bg-green-100 text-green-600' : m.type === 'out' ? 'bg-red-100 text-red-500' : 'bg-amber-100 text-amber-600'}`}>
@@ -519,7 +346,9 @@ function MovementsTab({ movements, item }: { movements: StockMovement[]; item: I
               </div>
               <div className="text-xs text-slate-400 mt-0.5">
                 {new Date(m.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                {m.destination && ` · to ${m.destination}`}
                 {m.notes && ` · ${m.notes}`}
+                {m.recordedBy && ` · ${m.recordedBy}`}
               </div>
             </div>
             <div className={`text-sm font-bold flex-shrink-0 ${cfg.color}`}>{sign}{m.qty} {item.unit}</div>
@@ -531,8 +360,10 @@ function MovementsTab({ movements, item }: { movements: StockMovement[]; item: I
 }
 
 // ─── Edit Tab ─────────────────────────────────────────────────────────────────
-function EditTab({ item, onSave, onDelete }: { item: InventoryItem; onSave: (p: Partial<InventoryItem>) => void; onDelete: () => void }) {
+function EditTab({ item, onSave, onDelete }: { item: InventoryItem; onSave: (p: ItemInput) => Promise<void>; onDelete: () => void }) {
+  const { saving, error, submit } = useSubmit();
   const [form, setForm] = useState({ ...item });
+  useEffect(() => { setForm({ ...item }); }, [item.id]);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   function set(key: keyof InventoryItem, value: any) { setForm(f => ({ ...f, [key]: value })); }
@@ -541,6 +372,7 @@ function EditTab({ item, onSave, onDelete }: { item: InventoryItem; onSave: (p: 
     <div className="space-y-4 max-w-md">
       <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
         <h3 className="text-sm font-semibold text-slate-800">Edit Item</h3>
+        <p className="text-xs text-slate-400">The quantity in stock changes only through Stock In, Stock Out and Adjust, so every change is on record.</p>
         <Field label="Name"><input className={INPUT} value={form.name} onChange={e => set('name', e.target.value)} /></Field>
         <Field label="SKU"><input className={INPUT} value={form.sku} onChange={e => set('sku', e.target.value)} /></Field>
         <Field label="Category">
@@ -555,7 +387,13 @@ function EditTab({ item, onSave, onDelete }: { item: InventoryItem; onSave: (p: 
         <Field label="Supplier"><input className={INPUT} value={form.supplier ?? ''} onChange={e => set('supplier', e.target.value || undefined)} /></Field>
         <Field label="Expiry Date"><input type="date" className={INPUT} value={form.expiryDate ?? ''} onChange={e => set('expiryDate', e.target.value || undefined)} /></Field>
         <Field label="Notes"><textarea className={INPUT + ' resize-none'} rows={2} value={form.notes ?? ''} onChange={e => set('notes', e.target.value || undefined)} /></Field>
-        <button onClick={() => onSave(form)} className="w-full py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700">Save Changes</button>
+        {error && <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">{error}</div>}
+        <button disabled={saving || !form.name.trim()}
+          onClick={() => { void submit(() => onSave({
+            name: form.name, sku: form.sku, category: form.category, unit: form.unit, minStockLevel: form.minStockLevel,
+            costPerUnit: form.costPerUnit, location: form.location, supplier: form.supplier, expiryDate: form.expiryDate, notes: form.notes,
+          })); }}
+          className="w-full py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">{saving ? 'Saving…' : 'Save Changes'}</button>
       </div>
 
       <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
@@ -577,9 +415,10 @@ function EditTab({ item, onSave, onDelete }: { item: InventoryItem; onSave: (p: 
 }
 
 // ─── Add Item Modal ────────────────────────────────────────────────────────────
-function AddItemModal({ onSave, onClose }: { onSave: (d: Omit<InventoryItem, 'id' | 'createdAt'>) => void; onClose: () => void }) {
-  const [form, setForm] = useState<Omit<InventoryItem, 'id' | 'createdAt'>>({
-    name: '', sku: '', category: 'other', unit: 'kg', currentQty: 0, minStockLevel: 0,
+function AddItemModal({ onSave, onClose }: { onSave: (d: ItemInput) => Promise<void>; onClose: () => void }) {
+  const { saving, error, submit } = useSubmit();
+  const [form, setForm] = useState<ItemInput>({
+    name: '', sku: '', category: 'other', unit: 'kg', openingQty: 0, minStockLevel: 0,
   });
   function set(key: keyof typeof form, value: any) { setForm(f => ({ ...f, [key]: value })); }
 
@@ -610,7 +449,7 @@ function AddItemModal({ onSave, onClose }: { onSave: (d: Omit<InventoryItem, 'id
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Unit"><input className={INPUT} placeholder="kg / litre / bag" value={form.unit} onChange={e => set('unit', e.target.value)} /></Field>
-            <Field label="Opening Stock"><input type="number" className={INPUT} value={form.currentQty || ''} onChange={e => set('currentQty', parseFloat(e.target.value) || 0)} /></Field>
+            <Field label="Opening Stock"><input type="number" className={INPUT} value={form.openingQty || ''} onChange={e => set('openingQty', parseFloat(e.target.value) || 0)} /></Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Min Stock Level"><input type="number" className={INPUT} value={form.minStockLevel || ''} onChange={e => set('minStockLevel', parseFloat(e.target.value) || 0)} /></Field>
@@ -619,12 +458,13 @@ function AddItemModal({ onSave, onClose }: { onSave: (d: Omit<InventoryItem, 'id
           <Field label="Location"><input className={INPUT} placeholder="e.g. Feed Store A" value={form.location ?? ''} onChange={e => set('location', e.target.value || undefined)} /></Field>
           <Field label="Supplier"><input className={INPUT} placeholder="e.g. ABC Feeds Ltd" value={form.supplier ?? ''} onChange={e => set('supplier', e.target.value || undefined)} /></Field>
           <Field label="Notes"><textarea className={INPUT + ' resize-none'} rows={2} placeholder="Any additional notes" value={form.notes ?? ''} onChange={e => set('notes', e.target.value || undefined)} /></Field>
+          {error && <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">{error}</div>}
         </div>
         <div className="px-5 py-4 border-t border-slate-100 flex gap-3 flex-shrink-0">
           <button onClick={onClose} className="flex-1 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
-          <button onClick={() => onSave(form)} disabled={!form.name.trim()}
+          <button onClick={() => { void submit(() => onSave(form)); }} disabled={saving || !form.name.trim()}
             className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
-            Add Item
+            {saving ? 'Saving…' : 'Add Item'}
           </button>
         </div>
       </div>
@@ -640,9 +480,11 @@ const MOV_LABELS: Record<MovementType, string> = {
 function MovementModal({ item, type, onSave, onClose }: {
   item: InventoryItem;
   type: MovementType;
-  onSave: (m: Omit<StockMovement, 'id' | 'createdAt'>) => void;
+  onSave: (m: { itemId: string; type: MovementType; qty: number; date: string; reference?: string; destination?: string; unitCost?: number; notes?: string }) => Promise<void>;
   onClose: () => void;
 }) {
+  const { saving, error, submit } = useSubmit();
+  const [destination, setDestination] = useState('');
   const [qty, setQty] = useState('');
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [ref, setRef] = useState('');
@@ -668,7 +510,13 @@ function MovementModal({ item, type, onSave, onClose }: {
           </Field>
           <Field label={`Quantity (${item.unit}) *`}>
             <input type="number" step="any" className={INPUT} placeholder="0" value={qty} onChange={e => setQty(e.target.value)} />
+            {movType === 'adjustment' && <p className="text-[11px] text-slate-400 mt-1">Use a negative number to remove stock (a count correction, spillage or loss).</p>}
           </Field>
+          {movType === 'transfer' && (
+            <Field label="Moved to *">
+              <input className={INPUT} placeholder="e.g. Store B, another farm" value={destination} onChange={e => setDestination(e.target.value)} />
+            </Field>
+          )}
           <Field label="Date">
             <input type="date" className={INPUT} value={date} onChange={e => setDate(e.target.value)} />
           </Field>
@@ -683,14 +531,16 @@ function MovementModal({ item, type, onSave, onClose }: {
           <Field label="Notes">
             <input className={INPUT} placeholder="optional" value={notes} onChange={e => setNotes(e.target.value)} />
           </Field>
+          {error && <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">{error}</div>}
         </div>
         <div className="px-5 py-4 border-t border-slate-100 flex gap-3">
           <button onClick={onClose} className="flex-1 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
           <button
-            onClick={() => onSave({ itemId: item.id, type: movType, qty: parseFloat(qty) || 0, date, reference: ref || undefined, unitCost: parseFloat(unitCost) || undefined, notes: notes || undefined })}
-            disabled={!qty || parseFloat(qty) <= 0}
+            onClick={() => { void submit(() => onSave({ itemId: item.id, type: movType, qty: parseFloat(qty) || 0, date, reference: ref || undefined,
+              destination: movType === 'transfer' ? destination.trim() : undefined, unitCost: movType === 'in' ? parseFloat(unitCost) || undefined : undefined, notes: notes || undefined })); }}
+            disabled={saving || !qty || isNaN(parseFloat(qty)) || (movType === 'adjustment' ? parseFloat(qty) === 0 : parseFloat(qty) <= 0) || (movType === 'transfer' && !destination.trim())}
             className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
-            Record Movement
+            {saving ? 'Saving…' : 'Record Movement'}
           </button>
         </div>
       </div>
@@ -699,6 +549,19 @@ function MovementModal({ item, type, onSave, onClose }: {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+/** Run a save from a dialog: block double-clicks and keep any server error visible in the dialog. */
+function useSubmit() {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  async function submit(fn: () => Promise<void>) {
+    setSaving(true); setError('');
+    try { await fn(); }
+    catch (e) { setError(String((e as any)?.message ?? e)); }
+    finally { setSaving(false); }
+  }
+  return { saving, error, submit };
+}
+
 const INPUT = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

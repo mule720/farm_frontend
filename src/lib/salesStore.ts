@@ -7,8 +7,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { useEffect, useSyncExternalStore } from 'react';
 import { gqlRequest } from '@/lib/api';
-import { emit, type StockOutPayload } from '@/lib/bus';
 import { reloadFinanceIfLoaded } from '@/lib/financeStore';
+import { reloadStockIfLoaded } from '@/lib/inventoryStore';
 
 export type OrderStatus = 'draft' | 'confirmed' | 'fulfilled' | 'cancelled';
 export type PaymentStatus = 'unpaid' | 'partial' | 'paid' | 'overdue';
@@ -223,27 +223,14 @@ export async function createOrder(o: NewOrder): Promise<SaleOrder> {
   return order;
 }
 
-/** Hand the sold goods to Inventory (still kept in this browser) — once, by whoever fulfils the order. */
-function releaseStock(order: SaleOrder) {
-  const today = new Date().toISOString().slice(0, 10);
-  order.lines.forEach(line => {
-    const slug = line.description.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    emit<StockOutPayload>('inventory:stock_out', {
-      materialName: line.description, materialTypeId: slug, quantity: line.qty, unit: line.unit,
-      reason: `Sale order ${order.orderNumber} to ${order.customerName}`, reference: order.orderNumber,
-      destination: order.customerName, date: today,
-    }, 'sales');
-  });
-}
-
 export async function updateOrder(id: string, patch: { status?: OrderStatus; notes?: string }): Promise<SaleOrder> {
   const before = state.orders.find(o => o.id === id);
   const r = await gqlRequest<{ updateSaleOrder: { order: any } }>(UPDATE_ORDER_M, { id, status: patch.status ?? null, notes: patch.notes ?? null });
   const order = mapOrder(r.updateSaleOrder.order);
   set({ orders: state.orders.map(o => o.id === id ? order : o) });
   if (before && before.status !== 'fulfilled' && order.status === 'fulfilled') {
-    releaseStock(order);
-    void reloadFinanceIfLoaded();                       // the server just posted the income
+    void reloadFinanceIfLoaded();                       // the server just posted the income…
+    void reloadStockIfLoaded();                         // …and took the goods out of stock
   }
   return order;
 }

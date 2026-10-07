@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { ProcessingBatch, ProcessingRecipe, OutputRouting } from '@/lib/types';
 import { v4 as uuidv4 } from 'uuid';
-import { emit, type StockInPayload, type StockOutPayload } from '@/lib/bus';
+import { postStock } from '@/lib/inventoryStore';
 import { postFinance, inferCostCategory } from '@/lib/financeStore';
 
 // ─── Built-in recipe templates ────────────────────────────────────────────────
@@ -151,16 +151,12 @@ function useBatches() {
       // ── Batch started: emit stock_out for each input consumed ──────────────
       if (old.status !== 'in_progress' && next.status === 'in_progress') {
         (next.actualInputs ?? []).forEach(inp => {
-          emit<StockOutPayload>('inventory:stock_out', {
-            materialTypeId: inp.materialTypeId,
-            materialName: inp.materialName,
-            quantity: inp.actualQty ?? inp.quantityPer100kg ?? 0,
-            unit: inp.unit,
-            date: next.startDate ?? today,
-            destination: 'processing',
-            cycleRef: id,
-            reason: `Processing batch: ${next.recipeId}`,
-          }, 'processing');
+          const qty = inp.actualQty ?? inp.quantityPer100kg ?? 0;
+          if (qty <= 0) return;
+          postStock('processing', [{
+            sourceRef: `proc:${id}:in:${inp.materialTypeId ?? inp.materialName}`, direction: 'out', name: inp.materialName, qty, unit: inp.unit,
+            date: next.startDate ?? today, destination: 'processing', reference: `batch:${id}`, notes: `Processing batch: ${next.recipeId}`,
+          }]);
         });
       }
 
@@ -168,16 +164,10 @@ function useBatches() {
       if (old.status !== 'completed' && next.status === 'completed') {
         (next.actualOutputs ?? []).forEach(out => {
           if (!out.actualQty || out.actualQty <= 0) return;
-          emit<StockInPayload>('inventory:stock_in', {
-            materialTypeId: out.materialTypeId,
-            materialName: out.materialName,
-            quantity: out.actualQty,
-            unit: out.unit,
-            date: next.endDate ?? today,
-            cycleRef: id,
-            eventRef: `batch:${id}`,
-            qualityStatus: next.qualityStatus ?? 'pending',
-          }, 'processing');
+          postStock('processing', [{
+            sourceRef: `proc:${id}:out:${out.materialTypeId ?? out.materialName}`, direction: 'in', name: out.materialName, qty: out.actualQty, unit: out.unit,
+            date: next.endDate ?? today, reference: `batch:${id}`, notes: `Processing batch output (${next.qualityStatus ?? 'quality pending'})`,
+          }]);
         });
 
         // Emit batch total cost to Finance so it appears automatically

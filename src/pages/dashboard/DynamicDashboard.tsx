@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useOrg } from '@/store/orgStore';
 import { useTransactions } from '@/lib/financeStore';
+import { useStockItems } from '@/lib/inventoryStore';
 import { getTemplate } from '@/lib/templates';
 import {
   TrendingUp, TrendingDown, AlertTriangle, Plus, Activity,
@@ -164,7 +165,8 @@ export default function DynamicDashboard({ onNavigate }: { onNavigate: (page: st
 
   // ── LS reads — all at top level with [] deps ──────────────────────────────
   const txs         = useTransactions() as unknown as Tx[];
-  const invItems    = useMemo(() => lsGet<InvItem>('agronexus_v2_inventory_items'), []);
+  const stockItems  = useStockItems();
+  const invItems    = useMemo(() => stockItems.map(i => ({ ...i, costPerUnit: i.costPerUnit ?? 0 })) as unknown as InvItem[], [stockItems]);
   const aquaPonds   = useMemo(() => lsGet<AquaPond>('agronexus_v2_aqua_ponds'), []);
   const phHouses    = useMemo(() => lsGet<PhHouse>('agronexus_v2_ph_houses'), []);
   const wmTanks     = useMemo(() => lsGet<WmTank>('agronexus_v2_wm_tanks'), []);

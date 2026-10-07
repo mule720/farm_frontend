@@ -9,7 +9,8 @@ import {
   DailyRecord, ProductionEvent, EditRequest, ProductionTemplate,
 } from '@/lib/types';
 import { getTemplate, setCustomTemplates } from '@/lib/templates';
-import { emit, type StockInPayload, type EggsSetPayload } from '@/lib/bus';
+import { emit, type EggsSetPayload } from '@/lib/bus';
+import { postStock, setStockAccount } from '@/lib/inventoryStore';
 import { gqlRequest } from '@/lib/api';
 import { postFinance, setFinanceAccount, inferCostCategory } from '@/lib/financeStore';
 import { setSalesAccount } from '@/lib/salesStore';
@@ -188,7 +189,7 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
   const ready = hydratedFor !== null && hydratedFor === (accountOrgId ?? '');
 
   // The finance ledger is per company, held on the server
-  useEffect(() => { setFinanceAccount(accountOrgId); setSalesAccount(accountOrgId); }, [accountOrgId]);
+  useEffect(() => { setFinanceAccount(accountOrgId); setSalesAccount(accountOrgId); setStockAccount(accountOrgId); }, [accountOrgId]);
 
   // Make the company's saved templates visible to every getTemplate() caller.
   // Done during render so children never see a stale list.
@@ -403,16 +404,11 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
         notes: 'Auto-recorded from production engine',
       }]);
       if (d.add_to_inventory) {
-        emit<StockInPayload>('inventory:stock_in', {
-          materialTypeId: d.item ?? 'unknown',
-          materialName: d.item ?? 'Farm Input',
-          quantity: Number(d.quantity ?? 0),
-          unit: String(d.unit ?? ''),
-          cycleRef: cycleId,
-          stageRef: stageId,
-          date: (event.date as string) ?? today,
-          costPerUnit: d.unit_cost ? Number(d.unit_cost) : undefined,
-        }, 'production');
+        postStock('production', [{
+          sourceRef: `prod:${eventId}:stock-purchase`, direction: 'in', name: d.item ?? 'Farm Input',
+          qty: Number(d.quantity ?? 0), unit: String(d.unit ?? ''), date: (event.date as string) ?? today,
+          costPerUnit: d.unit_cost ? Number(d.unit_cost) : undefined, reference: cycleId, notes: 'Purchase logged in production',
+        }]);
       }
     }
 
@@ -448,32 +444,20 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
 
     // 5. Harvest → inventory:stock_in (when routed to inventory)
     if ((event.type === 'harvest' || event.type === 'partial_harvest') && d.routing === 'Inventory') {
-      emit<StockInPayload>('inventory:stock_in', {
-        materialTypeId: d.product ?? 'harvest-output',
-        materialName: d.product ?? 'Harvest Output',
-        quantity: Number(d.quantity ?? d.total_weight ?? 0),
-        unit: String(d.unit ?? 'kg'),
-        cycleRef: cycleId,
-        stageRef: stageId,
-        eventRef: eventId,
-        date: (event.date as string) ?? today,
-        qualityStatus: 'pending',
-      }, 'production');
+      postStock('production', [{
+        sourceRef: `prod:${eventId}:stock-harvest`, direction: 'in', name: d.product ?? 'Harvest Output',
+        qty: Number(d.quantity ?? d.total_weight ?? 0), unit: String(d.unit ?? 'kg'), date: (event.date as string) ?? today,
+        reference: cycleId, notes: 'Harvest sent to inventory',
+      }]);
     }
 
     // 6. Egg collection → inventory:stock_in for table eggs, incubation:eggs_set for hatching eggs
     if (event.type === 'egg_collection') {
       if (d.table_eggs && Number(d.table_eggs) > 0) {
-        emit<StockInPayload>('inventory:stock_in', {
-          materialTypeId: 'table-eggs',
-          materialName: 'Table Eggs',
-          quantity: Number(d.table_eggs),
-          unit: 'count',
-          cycleRef: cycleId,
-          stageRef: stageId,
-          date: (event.date as string) ?? today,
-          qualityStatus: 'pass',
-        }, 'production');
+        postStock('production', [{
+          sourceRef: `prod:${eventId}:stock-eggs`, direction: 'in', name: 'Table Eggs', qty: Number(d.table_eggs), unit: 'count',
+          date: (event.date as string) ?? today, reference: cycleId, notes: 'Egg collection',
+        }]);
       }
       if (d.hatching_eggs && Number(d.hatching_eggs) > 0) {
         emit<EggsSetPayload>('incubation:eggs_set', {
@@ -487,31 +471,18 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
 
     // 7. Milk collection → inventory:stock_in
     if (event.type === 'milk_collection' && d.total_litres && Number(d.total_litres) > 0) {
-      emit<StockInPayload>('inventory:stock_in', {
-        materialTypeId: 'fresh-milk',
-        materialName: 'Fresh Milk',
-        quantity: Number(d.total_litres),
-        unit: 'litre',
-        cycleRef: cycleId,
-        stageRef: stageId,
-        date: (event.date as string) ?? today,
-        qualityStatus: 'pending',
-        notes: d.routing ? String(d.routing) : undefined,
-      }, 'production');
+      postStock('production', [{
+        sourceRef: `prod:${eventId}:stock-milk`, direction: 'in', name: 'Fresh Milk', qty: Number(d.total_litres), unit: 'litre',
+        date: (event.date as string) ?? today, reference: cycleId, notes: d.routing ? String(d.routing) : 'Milk collection',
+      }]);
     }
 
     // 8. Honey harvest → inventory:stock_in + finance:income
     if (event.type === 'honey_harvest' && d.honey_kg) {
-      emit<StockInPayload>('inventory:stock_in', {
-        materialTypeId: 'honey',
-        materialName: 'Honey',
-        quantity: Number(d.honey_kg),
-        unit: 'kg',
-        cycleRef: cycleId,
-        stageRef: stageId,
-        date: (event.date as string) ?? today,
-        qualityStatus: 'pass',
-      }, 'production');
+      postStock('production', [{
+        sourceRef: `prod:${eventId}:stock-honey`, direction: 'in', name: 'Honey', qty: Number(d.honey_kg), unit: 'kg',
+        date: (event.date as string) ?? today, reference: cycleId, notes: 'Honey harvest',
+      }]);
     }
 
     // ─── Persist event ──────────────────────────────────────────────────────

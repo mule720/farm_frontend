@@ -86,9 +86,9 @@ export default function BackupRestore() {
           <div>
             <h3 className="text-sm font-semibold text-slate-800">Export Backup</h3>
             <p className="text-sm text-slate-500 mt-0.5">
-              Downloads the farm data kept in this browser (modules, IoT readings, inventory, sales)
-              as a JSON file. Save this somewhere safe. Your Finance ledger, production cycles and
-              records are stored in your company account, not in this file.
+              Downloads the farm data kept in this browser (modules, IoT readings and similar)
+              as a JSON file. Save this somewhere safe. Your Finance ledger, Sales, Inventory,
+              production cycles and records are stored in your company account, not in this file.
             </p>
           </div>
         </div>

@@ -11,6 +11,7 @@ import {
 import { useOrg } from '@/store/orgStore';
 import { useTransactions } from '@/lib/financeStore';
 import { useOrders } from '@/lib/salesStore';
+import { useStockItems } from '@/lib/inventoryStore';
 import { getTemplate } from '@/lib/templates';
 import { exportCSV, backupAll } from '@/lib/exportUtils';
 
@@ -274,7 +275,7 @@ export default function ReportsEngine() {
   // ── LS reads (all at top, useMemo with [] deps) ──────────────────────────
   const txs: any[] = useTransactions();
   const orders: any[] = useOrders();
-  const invItems = useMemo<any[]>(() => { try { return JSON.parse(localStorage.getItem('agronexus_v2_inventory_items') ?? '[]') as any[]; } catch { return []; } }, []);
+  const invItems: any[] = useStockItems();
   const batches = useMemo<any[]>(() => { try { return JSON.parse(localStorage.getItem('agronexus_v2_batches') ?? '[]') as any[]; } catch { return []; } }, []);
   const hrStaff = useMemo<any[]>(() => { try { return JSON.parse(localStorage.getItem('agronexus_v2_hr_staff') ?? '[]') as any[]; } catch { return []; } }, []);
   const hrTimelog = useMemo<any[]>(() => { try { return JSON.parse(localStorage.getItem('agronexus_v2_hr_timelog') ?? '[]') as any[]; } catch { return []; } }, []);

@@ -7,6 +7,7 @@ import { Brain, Wheat, Droplet, TrendingUp, AlertTriangle, Sparkles, Zap, Refres
 import { useOrg } from '@/store/orgStore';
 import { getTemplate } from '@/lib/templates';
 import { useTransactions } from '@/lib/financeStore';
+import { useStockItems } from '@/lib/inventoryStore';
 
 // ─── Per-category feeding norms (g/animal/day, ml/animal/day) ─────────────────
 const FEEDING_NORMS: Record<string, { feedG: number; waterMl: number; feedType: string; notes: string }> = {
@@ -34,7 +35,7 @@ interface Insight {
   severity: 'info' | 'warning' | 'critical';
 }
 
-function generateInsights(txs: any[]): Insight[] {
+function generateInsights(txs: any[], items: any[]): Insight[] {
   const insights: Insight[] = [];
 
   // 1. Aquaculture — low DO + aerator off
@@ -70,7 +71,6 @@ function generateInsights(txs: any[]): Insight[] {
 
   // 3. Inventory below reorder point
   try {
-    const items: any[] = JSON.parse(localStorage.getItem('agronexus_v2_inventory_items') ?? '[]');
     const low = items.filter(i => (i.currentQty ?? i.quantity ?? 0) <= (i.minStockLevel ?? i.reorderPoint ?? 0));
     if (low.length > 0) {
       insights.push({
@@ -154,7 +154,8 @@ export default function SmartEngine() {
   // Computed insights from live localStorage data
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const ledger = useTransactions();
-  const insights = useMemo(() => generateInsights(ledger), [refreshKey, ledger]);
+  const stock = useStockItems();
+  const insights = useMemo(() => generateInsights(ledger, stock), [refreshKey, ledger, stock]);
 
   // Build today's feeding plan from real cycles
   const todayPlan = useMemo(() => {
