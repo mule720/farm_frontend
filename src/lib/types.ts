@@ -131,11 +131,65 @@ export interface KPIConfig {
   benchmark?: number;
 }
 
+/**
+ * One field on the daily record form. `visibleFor` limits it to certain cycle
+ * types (variant ids); omitted = always shown. `computed` fields are derived
+ * from other numeric fields and cannot be typed in.
+ */
+export interface RecordFieldDef {
+  id: string;
+  label: string;
+  type: 'number' | 'select' | 'text' | 'computed';
+  unit?: string;
+  required?: boolean;
+  options?: string[];
+  benchmark?: { min?: number; max?: number; target?: number };
+  hint?: string;
+  visibleFor?: string[];
+  computedFrom?: string[];
+  goodDirection?: 'up' | 'down' | 'neutral';
+}
+
+export type CareKind =
+  | 'feed' | 'water' | 'vaccination' | 'medication' | 'spray'
+  | 'fertiliser' | 'weighing' | 'inspection' | 'task';
+
+/**
+ * One line of the care guide. Days are counted from the cycle start (day 0).
+ *  - only `startDay`                → a one-off task on that day
+ *  - `startDay` + `repeatEveryDays` → recurs until `endDay` (or just once if no end)
+ *  - `startDay` + `endDay`, no repeat → a phase that applies for that whole span
+ *                                       (e.g. "Starter feed, day 0–14")
+ */
+export interface CareItem {
+  id: string;
+  kind: CareKind;
+  title: string;
+  product?: string;        // feed type, vaccine, chemical, fertiliser…
+  dose?: string;           // free text: "25 g/bird/day", "200 kg/ha", "1 ml/bird"
+  method?: string;         // route / how: "drinking water", "foliar spray", "eye drop"
+  startDay: number;
+  endDay?: number;
+  repeatEveryDays?: number;
+  withdrawalDays?: number; // days before harvest/slaughter/milk that this must stop
+  notes?: string;
+  visibleFor?: string[];   // cycle variants this applies to; omitted = all
+}
+
 export interface ProductionTemplate {
   id: string;
   name: string;
   shortName: string;
   category: ProductionCategory;
+  /** The farmer's own record-field standards. Absent = the built-in defaults for the category. */
+  recordFields?: RecordFieldDef[];
+  /** The farmer's own care guide. Absent = the built-in starter guide (if any). */
+  careSchedule?: CareItem[];
+  /** Set on a farmer-saved template: the built-in it was copied from. */
+  baseTemplateId?: string;
+  isCustom?: boolean;
+  version?: number;
+  updatedAt?: string;
   /** Which of the 11 universal template archetypes this maps to (T1–T11) */
   universalTemplate?: UniversalTemplate;
   species?: string;
@@ -253,6 +307,8 @@ export interface OrgProfile {
   vendorListings?: VendorListing[];
   vendorOrders?: VendorOrder[];
   editApproval?: EditApprovalConfig; // edit workflow configuration
+  /** Templates the company has customised and saved — shared by every member. */
+  customTemplates?: ProductionTemplate[];
   createdAt: string;
 }
 
@@ -305,6 +361,8 @@ export interface ProductionCycle {
   stages: CycleStage[];
   productionUnits: ProductionUnit[];
   notes?: string;
+  /** Care-guide items ticked off: key `${itemId}@${day}` → when and by whom */
+  careLog?: Record<string, { doneAt: string; by?: string }>;
   createdAt: string;
 }
 

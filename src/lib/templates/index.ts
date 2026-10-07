@@ -227,8 +227,31 @@ export const ALL_TEMPLATES: ProductionTemplate[] = [
 
 // ─── Lookup helpers ───────────────────────────────────────────────────────────
 
+// Templates the company has customised and saved. Kept in a module registry
+// (filled by the org store) so every existing getTemplate() caller finds them.
+let CUSTOM_TEMPLATES: ProductionTemplate[] = [];
+
+export function setCustomTemplates(list: ProductionTemplate[] | undefined) {
+  CUSTOM_TEMPLATES = list ?? [];
+}
+
+export function getCustomTemplates(): ProductionTemplate[] {
+  return CUSTOM_TEMPLATES;
+}
+
 export function getTemplate(id: string): ProductionTemplate | undefined {
-  return ALL_TEMPLATES.find(t => t.id === id);
+  return ALL_TEMPLATES.find(t => t.id === id) ?? CUSTOM_TEMPLATES.find(t => t.id === id);
+}
+
+/** The built-in a template descends from (itself, if it is built-in). */
+export function baseTemplateOf(t: ProductionTemplate): ProductionTemplate {
+  return (t.baseTemplateId && ALL_TEMPLATES.find(b => b.id === t.baseTemplateId)) || t;
+}
+
+/** The built-in plus every saved version of it — what the farmer can switch between. */
+export function templateFamily(t: ProductionTemplate): ProductionTemplate[] {
+  const base = baseTemplateOf(t);
+  return [base, ...CUSTOM_TEMPLATES.filter(c => c.baseTemplateId === base.id)];
 }
 
 export function getTemplatesByCategory(category: ProductionCategory): ProductionTemplate[] {

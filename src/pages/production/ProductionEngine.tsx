@@ -13,12 +13,16 @@ import {
   Package, Clipboard, ChevronUp, Flag, Trash2, Layers, Pencil,
 } from 'lucide-react';
 import {
-  ProductionCycle, CycleStage, ProductionTemplate,
+  ProductionCycle, CycleStage, ProductionTemplate, RecordFieldDef,
   MeasurementConfig, StageTemplate, TransferRecord,
   DailyRecord, ProductionEvent,
 } from '@/lib/types';
 import { v4 as uuidv4 } from 'uuid';
 import DailyRecordsCsvImport from './DailyRecordsCsvImport';
+import CarePlanTab from './CarePlanTab';
+import TemplateEditor from './TemplateEditor';
+import { getRecordFields, fieldsForVariant, inferVariant } from '@/lib/recordFields';
+import { getCareSchedule, buildAgenda, cycleDayOf } from '@/lib/careSchedule';
 
 interface Props {
   enterpriseId?: string;
@@ -467,7 +471,7 @@ function CycleRow({ cycle, org, selected, onClick, onDelete }: {
 // ─────────────────────────────────────────────────────────────────────────────
 // Cycle Detail
 // ─────────────────────────────────────────────────────────────────────────────
-type Tab = 'overview' | 'stages' | 'daily-log' | 'events' | 'outputs' | 'close';
+type Tab = 'overview' | 'stages' | 'daily-log' | 'care-plan' | 'events' | 'outputs' | 'close';
 
 function CycleDetail({ cycle, org, onClose }: { cycle: ProductionCycle; org: any; onClose: () => void }) {
   const enterprise = org.enterprises.find((e: any) => e.id === cycle.enterpriseId);
@@ -495,10 +499,19 @@ function CycleDetail({ cycle, org, onClose }: { cycle: ProductionCycle; org: any
   const nextPhase     = thisPhaseIdx >= 0 ? programPhases[thisPhaseIdx + 1] : undefined;
   const prevPhase     = thisPhaseIdx > 0  ? programPhases[thisPhaseIdx - 1] : undefined;
 
+  // Care-guide reminders for the header banner + tab badge
+  const careAgenda = buildAgenda(
+    getCareSchedule(template), cycleDayOf(cycle.startDate),
+    template ? inferVariant(cycle, template.category) : '__default__', cycle.careLog,
+  );
+  const careDue = careAgenda.today.filter(o => !o.done).length;
+  const careLate = careAgenda.overdue.length;
+
   const TABS: { id: Tab; label: string }[] = [
     { id: 'overview',  label: 'Overview' },
     { id: 'stages',    label: 'Stages' },
     { id: 'daily-log', label: 'Daily Log' },
+    { id: 'care-plan', label: `Care Plan${careDue + careLate > 0 && cycle.status === 'active' ? ` (${careDue + careLate})` : ''}` },
     { id: 'events',    label: 'Events' },
     { id: 'outputs',   label: 'Outputs' },
     ...(cycle.status === 'active' ? [{ id: 'close' as Tab, label: 'Close Cycle' }] : []),
@@ -551,6 +564,16 @@ function CycleDetail({ cycle, org, onClose }: { cycle: ProductionCycle; org: any
               style={{ width: `${cycle.stages.length ? (stagesDone / cycle.stages.length) * 100 : 0}%` }} />
           </div>
         </div>
+
+        {/* Care-guide reminder */}
+        {cycle.status === 'active' && (careDue > 0 || careLate > 0) && (
+          <button onClick={() => setTab('care-plan')}
+            className={`mt-3 w-full text-left flex items-center gap-2 p-2.5 border rounded-xl text-xs ${careLate > 0 ? 'bg-red-50 border-red-200 text-red-800' : 'bg-sky-50 border-sky-200 text-sky-800'}`}>
+            <span className="font-semibold">Care guide:</span>
+            <span>{careDue > 0 && `${careDue} due today`}{careDue > 0 && careLate > 0 && ' · '}{careLate > 0 && `${careLate} overdue`}</span>
+            <span className="ml-auto underline">Open Care Plan</span>
+          </button>
+        )}
 
         {/* Advance stage bar (active cycles only) */}
         {cycle.status === 'active' && currentStage && hasNextStage && (
@@ -650,6 +673,7 @@ function CycleDetail({ cycle, org, onClose }: { cycle: ProductionCycle; org: any
         {tab === 'overview'  && <OverviewTab  cycle={cycle} template={template} />}
         {tab === 'stages'    && <StagesTab    cycle={cycle} template={template} />}
         {tab === 'daily-log' && <DailyLogTab  cycle={cycle} template={template} currentStage={currentStage} />}
+        {tab === 'care-plan' && <CarePlanTab  cycle={cycle} template={template} />}
         {tab === 'events'    && <EventsTab    cycle={cycle} template={template} currentStage={currentStage} />}
         {tab === 'outputs'   && <OutputsTab   cycle={cycle} />}
         {tab === 'close'     && <CloseCycleTab cycle={cycle} template={template} onComplete={(date, notes) => completeCycle(cycle.id, date, notes)} />}
@@ -933,263 +957,7 @@ function StagesTab({ cycle, template }: { cycle: ProductionCycle; template: Prod
 // computed fields are auto-derived from other numeric fields (listed in computedFrom[])
 // ─────────────────────────────────────────────────────────────────────────────
 
-export interface DailyField {
-  id: string;
-  label: string;
-  type: 'number' | 'select' | 'text' | 'computed';
-  unit?: string;
-  required?: boolean;
-  options?: string[];
-  benchmark?: { min?: number; max?: number; target?: number };
-  hint?: string;
-  visibleFor?: string[];       // variant IDs; undefined = always visible
-  computedFrom?: string[];     // field IDs to sum for computed type
-  goodDirection?: 'up' | 'down';
-}
-
-// Helper: infer variantId from cycle when it wasn't stored
-function inferVariant(cycle: ProductionCycle, category: string): string {
-  if (cycle.variantId) return cycle.variantId;
-  if (category === 'poultry') {
-    const hasEggUnit = cycle.productionUnits.some(u => u.unit === 'eggs');
-    if (hasEggUnit) return 'incubation';
-    const hasEggRouting = cycle.notes?.toLowerCase().includes('egg');
-    return hasEggRouting ? 'layer_from_pol' : 'broiler_grow_out';
-  }
-  return '__default__';
-}
-
-const CATEGORY_DAILY_FIELDS: Record<string, DailyField[]> = {
-
-  // ── POULTRY ────────────────────────────────────────────────────────────────
-  poultry: [
-    // Layer / breeder fields
-    { id: 'eggs_collected',  label: 'Eggs Collected',      type: 'number', unit: 'eggs',  required: true,
-      goodDirection: 'up',
-      visibleFor: ['layer_from_chicks','layer_from_pol','layer_continuing','breeder_flock','quail_cycle','duck_cycle'] },
-    { id: 'cracked_eggs',    label: 'Cracked / Broken',    type: 'number', unit: 'eggs',
-      visibleFor: ['layer_from_chicks','layer_from_pol','layer_continuing','breeder_flock','quail_cycle','duck_cycle'] },
-    { id: 'egg_trays',       label: 'Trays Collected',     type: 'number', unit: 'trays',
-      hint: '30 eggs per tray',
-      visibleFor: ['layer_from_chicks','layer_from_pol','layer_continuing','breeder_flock'] },
-    { id: 'eggs_to_incubation', label: 'Eggs Set for Incubation', type: 'number', unit: 'eggs',
-      hint: 'Fertile eggs transferred to setter today',
-      visibleFor: ['breeder_flock'] },
-
-    // Incubation fields
-    { id: 'setter_temp',     label: 'Setter Temperature',  type: 'number', unit: '°C',    required: true,
-      benchmark: { min: 37.2, max: 37.8, target: 37.5 }, goodDirection: 'neutral',
-      visibleFor: ['incubation'] },
-    { id: 'setter_humidity', label: 'Setter Humidity',     type: 'number', unit: '%RH',   required: true,
-      benchmark: { min: 55, max: 65, target: 60 }, goodDirection: 'neutral',
-      visibleFor: ['incubation'] },
-    { id: 'hatcher_temp',    label: 'Hatcher Temperature', type: 'number', unit: '°C',
-      benchmark: { min: 36.9, max: 37.2, target: 37.0 }, goodDirection: 'neutral',
-      visibleFor: ['incubation'] },
-    { id: 'hatcher_humidity',label: 'Hatcher Humidity',    type: 'number', unit: '%RH',
-      benchmark: { min: 70, max: 80, target: 75 }, goodDirection: 'neutral',
-      visibleFor: ['incubation'] },
-    { id: 'turner_status',   label: 'Turner / Auto-Turn',  type: 'select',
-      options: ['Running OK','Manual turn done','Off — check immediately'],
-      visibleFor: ['incubation'] },
-    { id: 'candle_rejects',  label: 'Candle Rejects Removed', type: 'number', unit: 'eggs',
-      hint: 'Infertile / dead eggs removed after candling',
-      visibleFor: ['incubation'] },
-    { id: 'chicks_hatched',  label: 'Chicks Hatched',      type: 'number', unit: 'chicks',
-      goodDirection: 'up', visibleFor: ['incubation'] },
-    { id: 'chicks_culled',   label: 'Chicks Culled / Weak',type: 'number', unit: 'chicks',
-      goodDirection: 'down', visibleFor: ['incubation'] },
-
-    // Universal poultry — all except incubation
-    { id: 'feed_kg',         label: 'Feed Consumed',       type: 'number', unit: 'kg',    required: true,
-      goodDirection: 'neutral',
-      visibleFor: ['broiler_grow_out','layer_from_chicks','layer_from_pol','layer_continuing',
-                   'breeder_flock','turkey_grow_out','duck_cycle','quail_cycle'] },
-    { id: 'water_litres',    label: 'Water Consumed',      type: 'number', unit: 'L',
-      visibleFor: ['broiler_grow_out','layer_from_chicks','layer_from_pol','layer_continuing',
-                   'breeder_flock','turkey_grow_out','duck_cycle','quail_cycle'] },
-    { id: 'mortality_count', label: 'Mortality Count',     type: 'number', unit: 'birds', goodDirection: 'down',
-      visibleFor: ['broiler_grow_out','layer_from_chicks','layer_from_pol','layer_continuing',
-                   'breeder_flock','turkey_grow_out','duck_cycle','quail_cycle'] },
-    { id: 'mortality_reason',label: 'Mortality Reason',    type: 'select',
-      options: ['Unknown','Disease','Injury','Predator','Heat stress','Cold stress','Culled','Other'],
-      visibleFor: ['broiler_grow_out','layer_from_chicks','layer_from_pol','layer_continuing',
-                   'breeder_flock','turkey_grow_out','duck_cycle','quail_cycle'] },
-    { id: 'avg_body_weight', label: 'Avg Body Weight Sample', type: 'number', unit: 'g',
-      hint: 'Sample 10–20 birds and enter average',
-      visibleFor: ['broiler_grow_out','layer_from_chicks','turkey_grow_out','duck_cycle','quail_cycle'] },
-    { id: 'litter_condition',label: 'Litter Condition',    type: 'select',
-      options: ['Dry & crumbly (excellent)','Slightly damp (acceptable)','Wet / caked (action needed)','Very wet (critical)'],
-      visibleFor: ['broiler_grow_out','turkey_grow_out'] },
-    { id: 'house_temp',      label: 'House Temperature',   type: 'number', unit: '°C',
-      benchmark: { min: 18, max: 32 }, goodDirection: 'neutral',
-      visibleFor: ['broiler_grow_out','layer_from_chicks','layer_from_pol','layer_continuing',
-                   'breeder_flock','turkey_grow_out','duck_cycle','quail_cycle'] },
-    { id: 'live_bird_count', label: 'Live Bird Count',     type: 'number', unit: 'birds',
-      hint: 'Current total — subtract mortalities daily',
-      visibleFor: ['broiler_grow_out','layer_from_chicks','layer_from_pol','layer_continuing',
-                   'breeder_flock','turkey_grow_out','duck_cycle','quail_cycle'] },
-  ],
-
-  // ── LIVESTOCK ──────────────────────────────────────────────────────────────
-  livestock: [
-    { id: 'milk_morning',    label: 'Morning Milk',        type: 'number', unit: 'L',     required: true, goodDirection: 'up' },
-    { id: 'milk_afternoon',  label: 'Afternoon Milk',      type: 'number', unit: 'L',                    goodDirection: 'up' },
-    { id: 'milk_evening',    label: 'Evening Milk',        type: 'number', unit: 'L',                    goodDirection: 'up' },
-    { id: 'milk_total',      label: 'Total Milk Yield',    type: 'computed', unit: 'L',
-      computedFrom: ['milk_morning','milk_afternoon','milk_evening'], goodDirection: 'up' },
-    { id: 'milking_animals', label: 'Animals Milked',      type: 'number', unit: 'head' },
-    { id: 'concentrate_kg',  label: 'Concentrate Feed',    type: 'number', unit: 'kg' },
-    { id: 'fodder_kg',       label: 'Fodder / Roughage',   type: 'number', unit: 'kg' },
-    { id: 'water_litres',    label: 'Water Consumed',      type: 'number', unit: 'L' },
-    { id: 'mortality_count', label: 'Deaths / Culls',      type: 'number', unit: 'head',  goodDirection: 'down' },
-    { id: 'calvings',        label: 'Births / Calvings',   type: 'number', unit: 'head',  goodDirection: 'up' },
-    { id: 'health_flag',     label: 'Health Status',       type: 'select',
-      options: ['All healthy','Monitor 1–2 animals','Sick animal(s) — see notes','Emergency — vet called'] },
-    { id: 'avg_body_weight', label: 'Avg Body Weight Sample', type: 'number', unit: 'kg',
-      hint: 'Weigh 3–5 animals and average' },
-  ],
-
-  // ── AQUACULTURE ────────────────────────────────────────────────────────────
-  aquaculture: [
-    { id: 'feed_kg',         label: 'Feed Given',          type: 'number', unit: 'kg',    required: true, goodDirection: 'neutral' },
-    { id: 'water_temp',      label: 'Water Temperature',   type: 'number', unit: '°C',    required: true,
-      benchmark: { min: 25, max: 32, target: 28 }, goodDirection: 'neutral' },
-    { id: 'dissolved_o2',    label: 'Dissolved Oxygen',    type: 'number', unit: 'mg/L',  required: true,
-      benchmark: { min: 5, max: 10, target: 7 }, goodDirection: 'up' },
-    { id: 'ph',              label: 'pH Level',            type: 'number', unit: 'pH',
-      benchmark: { min: 6.5, max: 8.5, target: 7.5 }, goodDirection: 'neutral' },
-    { id: 'ammonia',         label: 'Ammonia (NH₃)',       type: 'number', unit: 'mg/L',
-      benchmark: { max: 0.02 }, goodDirection: 'down' },
-    { id: 'turbidity',       label: 'Turbidity / Secchi',  type: 'number', unit: 'cm' },
-    { id: 'mortality_count', label: 'Mortality Count',     type: 'number', unit: 'fish',  goodDirection: 'down' },
-    { id: 'water_change_pct',label: 'Water Change',        type: 'number', unit: '%' },
-    { id: 'avg_weight_g',    label: 'Avg Weight Sample',   type: 'number', unit: 'g',
-      hint: 'Weigh 10–20 fish from a single pond/tank', goodDirection: 'up' },
-    { id: 'feeding_response',label: 'Feeding Response',    type: 'select',
-      options: ['Vigorous — all food consumed','Good — consumed within 30min','Poor — leftover feed','Very poor — not feeding'] },
-  ],
-
-  // ── CROPS ──────────────────────────────────────────────────────────────────
-  crops: [
-    { id: 'irrigation_mm',   label: 'Irrigation Applied',  type: 'number', unit: 'mm' },
-    { id: 'fertilizer_kg',   label: 'Fertilizer Applied',  type: 'number', unit: 'kg/ha' },
-    { id: 'pest_pressure',   label: 'Pest Pressure',       type: 'select',
-      options: ['None observed','Low — monitor','Moderate — spray threshold','High — immediate action'] },
-    { id: 'disease_pressure',label: 'Disease Pressure',    type: 'select',
-      options: ['None observed','Low — monitor','Moderate — treat','High — severe'] },
-    { id: 'growth_stage',    label: 'Growth Stage',        type: 'select',
-      options: ['Germination','Seedling','Vegetative','Flowering','Grain fill','Maturity','Harvest ready'] },
-    { id: 'harvest_kg',      label: 'Harvest Collected',   type: 'number', unit: 'kg',  goodDirection: 'up' },
-    { id: 'spray_product',   label: 'Spray Applied',       type: 'text',   hint: 'Product name + rate' },
-    { id: 'rain_mm',         label: 'Rainfall',            type: 'number', unit: 'mm' },
-  ],
-
-  // ── HORTICULTURE ───────────────────────────────────────────────────────────
-  horticulture: [
-    { id: 'harvest_kg',      label: 'Harvest Weight',      type: 'number', unit: 'kg',    required: true, goodDirection: 'up' },
-    { id: 'harvest_units',   label: 'Units Harvested',     type: 'number', unit: 'units', goodDirection: 'up' },
-    { id: 'grade_a_kg',      label: 'Grade A',             type: 'number', unit: 'kg',    goodDirection: 'up' },
-    { id: 'grade_b_kg',      label: 'Grade B / Seconds',   type: 'number', unit: 'kg' },
-    { id: 'rejects_kg',      label: 'Rejects / Waste',     type: 'number', unit: 'kg',    goodDirection: 'down' },
-    { id: 'irrigation_mm',   label: 'Irrigation Applied',  type: 'number', unit: 'mm' },
-    { id: 'pest_disease',    label: 'Pest / Disease Flag',  type: 'select',
-      options: ['None','Aphids','Spider mite','Whitefly','Botrytis','Downy mildew','Other — see notes'] },
-    { id: 'plant_health',    label: 'Plant Health',        type: 'select',
-      options: ['Excellent','Good','Fair — monitor','Concern — action needed'] },
-  ],
-
-  // ── GREENHOUSE ─────────────────────────────────────────────────────────────
-  greenhouse: [
-    { id: 'ec',              label: 'Nutrient Solution EC', type: 'number', unit: 'mS/cm', required: true,
-      benchmark: { min: 1.2, max: 2.5, target: 1.8 }, goodDirection: 'neutral' },
-    { id: 'ph',              label: 'Nutrient Solution pH', type: 'number', unit: 'pH',    required: true,
-      benchmark: { min: 5.5, max: 6.5, target: 6.0 }, goodDirection: 'neutral' },
-    { id: 'air_temp',        label: 'Air Temperature',     type: 'number', unit: '°C',
-      benchmark: { min: 18, max: 28 }, goodDirection: 'neutral' },
-    { id: 'humidity',        label: 'Humidity',            type: 'number', unit: '%',
-      benchmark: { min: 60, max: 80 }, goodDirection: 'neutral' },
-    { id: 'nutrient_topup_l',label: 'Nutrient Top-Up',     type: 'number', unit: 'L' },
-    { id: 'harvest_kg',      label: 'Harvest Weight',      type: 'number', unit: 'kg',    goodDirection: 'up' },
-    { id: 'harvest_units',   label: 'Plants Harvested',    type: 'number', unit: 'plants',goodDirection: 'up' },
-    { id: 'plant_health',    label: 'Plant Health',        type: 'select',
-      options: ['Excellent','Good','Yellowing — check nutrients','Wilting — check roots','Disease spotted'] },
-    { id: 'pest_flag',       label: 'Pest Observation',    type: 'select',
-      options: ['None','Aphids','Spider mite','Fungus gnats','Thrips','Other'] },
-  ],
-
-  // ── ORCHARD ────────────────────────────────────────────────────────────────
-  orchard: [
-    { id: 'irrigation_hours',label: 'Irrigation Duration', type: 'number', unit: 'hours' },
-    { id: 'irrigation_mm',   label: 'Irrigation Amount',   type: 'number', unit: 'mm' },
-    { id: 'spray_product',   label: 'Spray Applied',       type: 'text',   hint: 'Product, concentration, and target (fungicide / insecticide / foliar)' },
-    { id: 'pest_pressure',   label: 'Pest / Disease Scouting', type: 'select',
-      options: ['None detected','Low — continue monitoring','Moderate — schedule spray','High — immediate action'] },
-    { id: 'fruit_thinned',   label: 'Fruit Thinned',       type: 'number', unit: 'fruits',
-      hint: 'Hand-thinning count to improve sizing' },
-    { id: 'harvest_kg',      label: 'Harvest Collected',   type: 'number', unit: 'kg',    goodDirection: 'up' },
-    { id: 'fruit_grade_a_kg',label: 'Grade A Fruit',       type: 'number', unit: 'kg',    goodDirection: 'up' },
-    { id: 'fruit_rejects_kg',label: 'Rejects / Drops',     type: 'number', unit: 'kg',    goodDirection: 'down' },
-    { id: 'tree_health',     label: 'Tree Health Status',  type: 'select',
-      options: ['All healthy','Minor yellowing — monitor','Suspected disease — isolate','Confirmed disease — action'] },
-    { id: 'rain_mm',         label: 'Rainfall',            type: 'number', unit: 'mm' },
-  ],
-
-  // ── APIARY ─────────────────────────────────────────────────────────────────
-  apiary: [
-    { id: 'hives_inspected', label: 'Hives Inspected',     type: 'number', unit: 'hives' },
-    { id: 'hive_status',     label: 'General Hive Status', type: 'select',
-      options: ['All healthy & queenright','1–2 hives weak — monitor','Queenless hive detected','Swarming activity','Disease signs (varroa/EFB/AFB)'] },
-    { id: 'honey_super_kg',  label: 'Honey Super Weight',  type: 'number', unit: 'kg',    goodDirection: 'up',
-      hint: 'Total weight of honey supers across all hives' },
-    { id: 'honey_harvested_kg', label: 'Honey Harvested',  type: 'number', unit: 'kg',    goodDirection: 'up' },
-    { id: 'mite_count',      label: 'Varroa Mite Count',   type: 'number', unit: 'mites/100 bees',
-      benchmark: { max: 3 }, goodDirection: 'down' },
-    { id: 'treatment',       label: 'Treatment Applied',   type: 'text',   hint: 'Product name + dose (oxalic, formic, etc.)' },
-    { id: 'feed_syrup_l',    label: 'Syrup Fed',           type: 'number', unit: 'L' },
-  ],
-
-  // ── MUSHROOM ───────────────────────────────────────────────────────────────
-  mushroom: [
-    { id: 'air_temp',        label: 'Air Temperature',     type: 'number', unit: '°C',
-      benchmark: { min: 16, max: 24, target: 20 }, goodDirection: 'neutral' },
-    { id: 'humidity',        label: 'Humidity',            type: 'number', unit: '%',
-      benchmark: { min: 80, max: 95, target: 90 }, goodDirection: 'neutral' },
-    { id: 'co2_ppm',         label: 'CO₂ Level',           type: 'number', unit: 'ppm',
-      benchmark: { max: 1000 }, goodDirection: 'down' },
-    { id: 'pinning_count',   label: 'Pinning Count',       type: 'number', unit: 'fruiting bodies', goodDirection: 'up' },
-    { id: 'harvest_kg',      label: 'Harvest Weight',      type: 'number', unit: 'kg',    goodDirection: 'up' },
-    { id: 'substrate_moisture', label: 'Substrate Moisture', type: 'select',
-      options: ['Optimal (60–70%)','Too dry — mist','Too wet — air out','Contamination visible'] },
-    { id: 'contamination',   label: 'Contamination',       type: 'select',
-      options: ['None','Slight — isolated','Moderate — quarantine block','Severe — dispose'] },
-    { id: 'misting_done',    label: 'Misting Done',        type: 'select',  options: ['Yes','No','Partial'] },
-  ],
-
-  // ── PROCESSING ─────────────────────────────────────────────────────────────
-  processing: [
-    { id: 'input_kg',        label: 'Raw Input Received',  type: 'number', unit: 'kg',    required: true },
-    { id: 'output_kg',       label: 'Finished Output',     type: 'number', unit: 'kg',    required: true, goodDirection: 'up' },
-    { id: 'waste_kg',        label: 'Waste / Loss',        type: 'number', unit: 'kg',    goodDirection: 'down' },
-    { id: 'yield_pct',       label: 'Processing Yield',    type: 'computed', unit: '%',
-      computedFrom: ['output_kg','input_kg'], goodDirection: 'up',
-      hint: 'Auto-calculated: output ÷ input × 100' },
-    { id: 'batches',         label: 'Batches Processed',   type: 'number', unit: 'batches' },
-    { id: 'downtime_hours',  label: 'Downtime',            type: 'number', unit: 'hours',  goodDirection: 'down' },
-    { id: 'quality_pass',    label: 'Quality Check Result',type: 'select',
-      options: ['Pass — all within spec','Minor deviation — acceptable','Fail — hold batch','Critical failure — destroy'] },
-  ],
-
-  // ── SERVICES ───────────────────────────────────────────────────────────────
-  services: [
-    { id: 'clients_served',  label: 'Clients Served',      type: 'number', unit: 'clients', goodDirection: 'up' },
-    { id: 'hours_worked',    label: 'Hours Worked',        type: 'number', unit: 'hours' },
-    { id: 'revenue_today',   label: 'Revenue Collected',   type: 'number', unit: 'currency', goodDirection: 'up' },
-    { id: 'pending_invoices',label: 'Pending Invoices',    type: 'number', unit: 'invoices', goodDirection: 'down' },
-    { id: 'service_type',    label: 'Service Type',        type: 'select',
-      options: ['Consultation','Field visit','Training','Lab test','Advisory call','Other'] },
-  ],
-};
+export type DailyField = RecordFieldDef;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Daily Log Tab — fully category-aware daily record entry
@@ -1214,12 +982,11 @@ function DailyLogTab({ cycle, template, currentStage }: {
 
   const category = template?.category ?? null;
   const variantId = category ? inferVariant(cycle, category) : '';
-  const allFields = category ? (CATEGORY_DAILY_FIELDS[category] ?? []) : [];
-
-  // Filter by variant: show field if no visibleFor restriction, or variant is in the list
-  const fields = allFields.filter(f =>
-    !f.visibleFor || f.visibleFor.includes(variantId)
-  );
+  // The farmer's own standards if they set them, otherwise the built-in defaults
+  const fields = fieldsForVariant(getRecordFields(template), variantId);
+  const { org } = useOrg();
+  const enterprise = org?.enterprises.find(e => e.id === cycle.enterpriseId);
+  const [editFields, setEditFields] = useState(false);
 
   // Auto-compute derived fields whenever source fields change
   function handleChange(id: string, val: string) {
@@ -1315,6 +1082,19 @@ function DailyLogTab({ cycle, template, currentStage }: {
 
   return (
     <div className="space-y-5">
+      <div className="flex items-center justify-between gap-2 -mb-2">
+        <p className="text-xs text-slate-500">
+          {template?.isCustom ? <>Using your template <b>{template.name}</b></> : 'Using the built-in record fields'}
+        </p>
+        {enterprise && template && (
+          <button onClick={() => setEditFields(true)} className="text-xs font-medium text-green-700 hover:text-green-800 underline">
+            Customise fields
+          </button>
+        )}
+      </div>
+      {editFields && enterprise && template && (
+        <TemplateEditor enterprise={enterprise} template={template} initialTab="fields" onClose={() => setEditFields(false)} />
+      )}
       {/* Stage + date row */}
       <div className="grid grid-cols-2 gap-3">
         <div>

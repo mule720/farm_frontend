@@ -3,7 +3,7 @@ import { useOrg } from '@/store/orgStore';
 import { useAuth } from '@/contexts/AuthContext';
 import IncomingCallBanner from '@/components/video/IncomingCallBanner';
 import { getTemplate } from '@/lib/templates';
-import { ALL_TEMPLATES } from '@/lib/templates';
+import { ALL_TEMPLATES, getCustomTemplates } from '@/lib/templates';
 import {
   LayoutDashboard, Activity, Package, ShoppingCart, DollarSign,
   Settings, Store, ChevronLeft, ChevronRight, Sprout, LogOut,
@@ -685,13 +685,15 @@ function AddEnterpriseModal({ onClose }: { onClose: () => void }) {
   const [catFilter, setCatFilter] = useState<CategoryFilter>('all');
   const [saved, setSaved]       = useState(false);
 
-  const filtered = ALL_TEMPLATES.filter(t => {
+  // The company's own saved templates come first, then the built-ins
+  const pickable = [...getCustomTemplates(), ...ALL_TEMPLATES];
+  const filtered = pickable.filter(t => {
     const matchCat = catFilter === 'all' || t.category === catFilter;
     const matchQ   = search === '' || t.name.toLowerCase().includes(search.toLowerCase()) || (t.species ?? '').toLowerCase().includes(search.toLowerCase());
     return matchCat && matchQ;
   });
 
-  const selectedTpl = ALL_TEMPLATES.find(t => t.id === templateId);
+  const selectedTpl = pickable.find(t => t.id === templateId);
 
   function handleSave() {
     if (!name.trim() || !templateId) return;
@@ -784,6 +786,7 @@ function AddEnterpriseModal({ onClose }: { onClose: () => void }) {
                   )}
                   <span className="text-xl">{t.icon}</span>
                   <span className="text-[10px] font-medium text-slate-700 leading-tight">{t.shortName ?? t.name}</span>
+                  {t.isCustom && <span className="text-[9px] font-semibold text-green-700 bg-green-100 rounded-full px-1.5">My template</span>}
                 </button>
               ))}
               {filtered.length === 0 && (

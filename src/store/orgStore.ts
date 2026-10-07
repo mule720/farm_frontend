@@ -6,9 +6,9 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { v4 as uuidv4 } from 'uuid';
 import {
   OrgProfile, EnterpriseConfig, ProductionCycle, ProductionUnit,
-  DailyRecord, ProductionEvent, EditRequest,
+  DailyRecord, ProductionEvent, EditRequest, ProductionTemplate,
 } from '@/lib/types';
-import { getTemplate } from '@/lib/templates';
+import { getTemplate, setCustomTemplates } from '@/lib/templates';
 import { emit, type StockInPayload, type CostPayload, type IncomePayload, type EggsSetPayload } from '@/lib/bus';
 import { gqlRequest } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
@@ -27,6 +27,12 @@ interface OrgState {
   completeOnboarding: () => void;
   /** Erase the whole company workspace (shared copy + this browser) and restart onboarding. */
   resetWorkspace: () => Promise<void>;
+
+  // Saved templates (the farmer's own standards) + care-guide ticks
+  /** Save (create or update) a customised template and optionally switch an enterprise to it. */
+  saveCustomTemplate: (template: ProductionTemplate, useForEnterpriseId?: string) => void;
+  deleteCustomTemplate: (id: string) => void;
+  setCareDone: (cycleId: string, key: string, done: boolean, by?: string) => void;
 
   // Enterprises
   addEnterprise: (config: Omit<EnterpriseConfig, 'id' | 'createdAt'>) => EnterpriseConfig;
@@ -179,6 +185,10 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
 
   const ready = hydratedFor !== null && hydratedFor === (accountOrgId ?? '');
 
+  // Make the company's saved templates visible to every getTemplate() caller.
+  // Done during render so children never see a stale list.
+  setCustomTemplates(org?.customTemplates);
+
   // Persist org (localStorage + backend). Skips the hydration render itself.
   const skipNext = React.useRef({ org: true, cycles: true, edits: true });
   useEffect(() => { skipNext.current = { org: true, cycles: true, edits: true }; }, [hydratedFor]);
@@ -243,6 +253,48 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
     [STORAGE_KEY, CYCLES_KEY, EDITS_KEY, ACCOUNT_KEY].forEach(k => localStorage.removeItem(k));
     window.location.reload();
   }, [accountOrgId]);
+
+  // ─── Saved templates & care guide ────────────────────────────────────────────
+
+  const saveCustomTemplate = useCallback((template: ProductionTemplate, useForEnterpriseId?: string) => {
+    setOrg(prev => {
+      if (!prev) return prev;
+      const saved: ProductionTemplate = { ...template, isCustom: true, updatedAt: new Date().toISOString() };
+      const list = prev.customTemplates ?? [];
+      const exists = list.some(t => t.id === saved.id);
+      return {
+        ...prev,
+        customTemplates: exists ? list.map(t => t.id === saved.id ? saved : t) : [...list, saved],
+        enterprises: useForEnterpriseId
+          ? prev.enterprises.map(e => e.id === useForEnterpriseId ? { ...e, templateId: saved.id } : e)
+          : prev.enterprises,
+      };
+    });
+  }, []);
+
+  const deleteCustomTemplate = useCallback((id: string) => {
+    setOrg(prev => {
+      if (!prev) return prev;
+      const gone = (prev.customTemplates ?? []).find(t => t.id === id);
+      return {
+        ...prev,
+        customTemplates: (prev.customTemplates ?? []).filter(t => t.id !== id),
+        // enterprises using it fall back to the built-in it was copied from
+        enterprises: prev.enterprises.map(e =>
+          e.templateId === id && gone?.baseTemplateId ? { ...e, templateId: gone.baseTemplateId } : e),
+      };
+    });
+  }, []);
+
+  const setCareDone = useCallback((cycleId: string, key: string, done: boolean, by?: string) => {
+    setCycles(prev => prev.map(c => {
+      if (c.id !== cycleId) return c;
+      const log = { ...(c.careLog ?? {}) };
+      if (done) log[key] = { doneAt: new Date().toISOString(), by };
+      else delete log[key];
+      return { ...c, careLog: log };
+    }));
+  }, []);
 
   // ─── Enterprises ─────────────────────────────────────────────────────────────
 
@@ -668,6 +720,7 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
     value: {
       org, cycles, editRequests, loading,
       createOrg, updateOrg, completeOnboarding, resetWorkspace,
+      saveCustomTemplate, deleteCustomTemplate, setCareDone,
       addEnterprise, updateEnterprise, removeEnterprise,
       addCycle, updateCycle, getCyclesForEnterprise, getActiveCycle,
       addDailyRecord, addEvent, advanceStage, completeCycle, deleteCycle,
