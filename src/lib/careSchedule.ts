@@ -9,6 +9,7 @@
 // or the product label before use.
 // ─────────────────────────────────────────────────────────────────────────────
 import type { CareItem, CareKind, ProductionTemplate } from './types';
+import { CARE_DEFAULTS_2 } from './careGuides2';
 
 export const CARE_KINDS: { id: CareKind; label: string; tone: string }[] = [
   { id: 'feed',        label: 'Feed',          tone: 'bg-amber-100 text-amber-800' },
@@ -256,6 +257,7 @@ const onion = (() => {
 
 /** Starter care guides, keyed by template id. Templates not listed start with an empty guide. */
 export const CARE_DEFAULTS: Record<string, CareItem[]> = {
+  ...CARE_DEFAULTS_2,
   broiler_chicken: broiler,
   layer_chicken: layer,
   dairy_cattle: dairy,
@@ -291,8 +293,21 @@ export function itemDays(i: CareItem): number[] {
   if (!i.repeatEveryDays || i.repeatEveryDays < 1) return [i.startDay];
   const end = i.endDay ?? i.startDay;
   const days: number[] = [];
-  for (let d = i.startDay; d <= end && days.length < 400; d += i.repeatEveryDays) days.push(d);
+  for (let d = i.startDay; d <= end && days.length < 5000; d += i.repeatEveryDays) days.push(d);
   return days;
+}
+
+/** The days an item falls on within [lo, hi] — computed directly, so long schedules cost nothing. */
+export function daysInRange(i: CareItem, lo: number, hi: number): number[] {
+  if (isPhase(i)) return [];
+  const end = i.endDay ?? i.startDay;
+  const step = i.repeatEveryDays && i.repeatEveryDays >= 1 ? i.repeatEveryDays : 0;
+  if (!step) return i.startDay >= lo && i.startDay <= hi ? [i.startDay] : [];
+  const from = Math.max(i.startDay, lo);
+  const first = i.startDay + Math.ceil((from - i.startDay) / step) * step;
+  const out: number[] = [];
+  for (let d = first; d <= Math.min(end, hi); d += step) out.push(d);
+  return out;
 }
 
 export const careKey = (itemId: string, day: number) => `${itemId}@${day}`;
@@ -329,7 +344,7 @@ export function buildAgenda(
       if (cycleDay >= item.startDay && cycleDay <= (item.endDay as number)) out.phases.push(item);
       continue;
     }
-    for (const day of itemDays(item)) {
+    for (const day of daysInRange(item, cycleDay - OVERDUE_WINDOW, cycleDay + 7)) {
       const key = careKey(item.id, day);
       const occ: CareOccurrence = { key, item, day, done: !!careLog?.[key] };
       if (day === cycleDay) out.today.push(occ);
