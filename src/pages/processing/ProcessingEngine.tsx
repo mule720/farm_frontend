@@ -162,6 +162,15 @@ function useBatches() {
 
       // ── Batch completed: emit stock_in for each output + emit finance:cost ─────
       if (old.status !== 'completed' && next.status === 'completed') {
+        // inputs are only known by now (batches start with zero quantities); sourceRef keeps this idempotent
+        (next.actualInputs ?? []).forEach(inp => {
+          const qty = inp.actualQty ?? 0;
+          if (qty <= 0) return;
+          postStock('processing', [{
+            sourceRef: `proc:${id}:in:${inp.materialTypeId ?? inp.materialName}`, direction: 'out', name: inp.materialName, qty, unit: inp.unit,
+            date: next.startDate ?? today, destination: 'processing', reference: `batch:${id}`, notes: `Processing batch: ${next.recipeId}`,
+          }]);
+        });
         (next.actualOutputs ?? []).forEach(out => {
           if (!out.actualQty || out.actualQty <= 0) return;
           postStock('processing', [{
@@ -171,7 +180,8 @@ function useBatches() {
         });
 
         // Emit batch total cost to Finance so it appears automatically
-        const totalCost = (next.totalCost ?? 0) + (next.laborCost ?? 0) + (next.overheadCost ?? 0);
+        // totalCost already includes inputs, labour and overhead
+        const totalCost = next.totalCost ?? 0;
         if (totalCost > 0) {
           postFinance('processing', [{
             sourceRef: `proc:${id}`, type: 'expense', category: inferCostCategory('Processing'),

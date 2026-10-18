@@ -460,6 +460,11 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
         }]);
       }
       if (d.hatching_eggs && Number(d.hatching_eggs) > 0) {
+        // nothing listens for eggs_set yet, so keep the eggs visible as their own stock line
+        postStock('production', [{
+          sourceRef: `prod:${eventId}:stock-hatching`, direction: 'in', name: 'Hatching Eggs', qty: Number(d.hatching_eggs), unit: 'count',
+          date: (event.date as string) ?? today, reference: cycleId, notes: 'Egg collection (set aside for hatching)',
+        }]);
         emit<EggsSetPayload>('incubation:eggs_set', {
           quantity: Number(d.hatching_eggs),
           date: (event.date as string) ?? today,

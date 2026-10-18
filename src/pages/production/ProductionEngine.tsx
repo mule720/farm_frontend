@@ -468,6 +468,36 @@ function CycleRow({ cycle, org, selected, onClick, onDelete }: {
   );
 }
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reading events. The Events form saves its answers under event.data, so totals
+// are worked out from there; events that carry measurements/outputs directly
+// (older records) are still honoured.
+// ─────────────────────────────────────────────────────────────────────────────
+const ROUTING_FROM_FORM: Record<string, MaterialOutput['routing']> = {
+  'Inventory': 'inventory', 'Direct Sale': 'sale', 'Processing': 'processing', 'Own Use': 'own_use', 'Waste': 'waste',
+};
+
+/** Animals/plants lost in one mortality event. */
+function mortalityCount(e: ProductionEvent): number {
+  if (e.type !== 'mortality') return 0;
+  return Number(e.measurements?.['count'] ?? e.data?.['count']) || 0;
+}
+
+/** The outputs an event produced — recorded directly, or taken from a harvest form's answers. */
+function eventOutputs(e: ProductionEvent): MaterialOutput[] {
+  if (e.outputs && e.outputs.length) return e.outputs;
+  if (e.type !== 'harvest' && e.type !== 'partial_harvest') return [];
+  const d = e.data ?? {};
+  const qty = Number(d['quantity'] ?? d['total_weight']) || 0;
+  if (qty <= 0) return [];
+  const product = String(d['product'] ?? 'Harvest');
+  return [{
+    id: `${e.id}:out`, materialTypeId: product.toLowerCase().replace(/[^a-z0-9]+/g, '-'), materialName: product, quantity: qty,
+    unit: String(d['unit'] ?? 'kg') as MaterialOutput['unit'], routing: ROUTING_FROM_FORM[String(d['routing'])] ?? 'inventory',
+  }];
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Cycle Detail
 // ─────────────────────────────────────────────────────────────────────────────
@@ -739,12 +769,10 @@ function CycleDetail({ cycle, org, onClose }: { cycle: ProductionCycle; org: any
 function OverviewTab({ cycle, template }: { cycle: ProductionCycle; template: ProductionTemplate | undefined }) {
   const allRecords = cycle.stages.flatMap(s => s.dailyRecords);
   const allEvents  = cycle.stages.flatMap(s => s.events);
-  const allOutputs = cycle.stages.flatMap(s => s.events.flatMap(e => e.outputs ?? []));
+  const allOutputs = cycle.stages.flatMap(s => s.events.flatMap(eventOutputs));
 
   // Compute simple running KPIs
-  const totalMortality = allEvents
-    .filter(e => e.type === 'mortality')
-    .reduce((sum, e) => sum + (e.measurements['count'] ?? 0), 0);
+  const totalMortality = allEvents.reduce((sum, e) => sum + mortalityCount(e), 0);
   const totalHarvested = allOutputs
     .filter(o => o.routing === 'sale' || o.routing === 'inventory')
     .reduce((sum, o) => sum + o.quantity, 0);
@@ -1681,6 +1709,16 @@ function EventsTab({ cycle, template, currentStage }: {
         const q  = parseFloat(next['quantity'] ?? '0') || 0;
         if (uc && q) next['total_cost'] = String((uc * q).toFixed(2));
       }
+      if (id === 'count' || id === 'cost_per_fingerling') {
+        const c  = parseFloat(next['count'] ?? '0') || 0;
+        const cp = parseFloat(next['cost_per_fingerling'] ?? '0') || 0;
+        if (c && cp) next['total_cost'] = String((c * cp).toFixed(2));
+      }
+      if (id === 'rate' || id === 'area') {
+        const r = parseFloat(next['rate'] ?? '0') || 0;
+        const a = parseFloat(next['area'] ?? '0') || 0;
+        if (r && a) next['total_applied'] = String((r * a).toFixed(2));
+      }
       if (id === 'morning_litres' || id === 'afternoon_litres' || id === 'evening_litres') {
         const tot = (parseFloat(next['morning_litres'] ?? '0') || 0)
           + (parseFloat(next['afternoon_litres'] ?? '0') || 0)
@@ -1997,7 +2035,7 @@ function UniversalEventForm({ fields, values, onChange }: {
 // ─────────────────────────────────────────────────────────────────────────────
 function OutputsTab({ cycle }: { cycle: ProductionCycle }) {
   const allOutputs = cycle.stages.flatMap(s =>
-    s.events.flatMap(e => (e.outputs ?? []).map(o => ({ ...o, date: e.date, stageName: s.name })))
+    s.events.flatMap(e => eventOutputs(e).map(o => ({ ...o, date: e.date, stageName: s.name })))
   ).sort((a, b) => b.date.localeCompare(a.date));
 
   const byRouting = allOutputs.reduce<Record<string, typeof allOutputs>>((acc, o) => {
@@ -2139,8 +2177,8 @@ function CloseCycleTab({ cycle, template, onComplete }: {
   // Summary stats
   const allRecords = cycle.stages.flatMap(s => s.dailyRecords);
   const allEvents  = cycle.stages.flatMap(s => s.events);
-  const allOutputs = cycle.stages.flatMap(s => s.events.flatMap(e => e.outputs ?? []));
-  const totalMortality = allEvents.filter(e => e.type === 'mortality').reduce((s, e) => s + (e.measurements['count'] ?? 0), 0);
+  const allOutputs = cycle.stages.flatMap(s => s.events.flatMap(eventOutputs));
+  const totalMortality = allEvents.reduce((s, e) => s + mortalityCount(e), 0);
   const totalHarvested = allOutputs.reduce((s, o) => s + o.quantity, 0);
   const daysActive = Math.ceil((new Date(endDate).getTime() - new Date(cycle.startDate).getTime()) / 86400000);
 
