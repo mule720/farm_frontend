@@ -135,7 +135,8 @@ function recommend(fieldName: string, records: FieldRecord[]): Recommendation | 
 // ─── Components ───────────────────────────────────────────────────────────────
 
 export default function CropRotation() {
-  const { org, enterprises } = useOrg();
+  const { org } = useOrg();
+  const enterprises = org?.enterprises ?? [];
   const eid = enterprises[0]?.id ?? '';
 
   const [fields, setFields] = useState<Field[]>(() => {
