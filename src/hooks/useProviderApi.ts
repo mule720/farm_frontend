@@ -13,6 +13,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { gqlRequest } from '@/lib/api';
 import { Provider } from '@/pages/marketplace/ProviderDirectory';
+import { arr } from '@/graphql/vendorQueries';
 import {
   PROVIDERS_QUERY,
   CREATE_HIRE_BOOKING_MUTATION,
@@ -34,7 +35,7 @@ function adaptApiProvider(raw: any): Provider {
     email:          raw.email ?? '',
     website:        raw.website || undefined,
     location:       [raw.town, raw.district].filter(Boolean).join(', '),
-    districts:      raw.coverageDistricts ?? [],
+    districts:      arr(raw.coverageDistricts),
     operatingHours: raw.serviceHours || undefined,
     verified:       raw.isVerified ?? false,
     certified:      (raw.certifications?.length ?? 0) > 0,
@@ -45,9 +46,9 @@ function adaptApiProvider(raw: any): Provider {
     services:       [],      // loaded on detail expand
     reviews:        [],
     certifications: [],
-    tags:           raw.tags ?? [],
+    tags:           arr(raw.tags),
     createdAt:      raw.updatedAt ?? new Date().toISOString(),
-    specialties:    raw.specialties ?? [],
+    specialties:    arr(raw.specialties),
   };
 }
 
