@@ -171,7 +171,8 @@ const BLANK_FORM: AddForm = { name:'', family:'soil_sensor', model:'', location:
 type Tab = 'overview' | 'devices' | 'alerts' | 'add';
 
 export default function DeviceGateway() {
-  const { enterprises } = useOrg();
+  const { org } = useOrg();
+  const enterprises = org?.enterprises ?? [];
   const eid = enterprises[0]?.id ?? '';
 
   // Init localStorage once

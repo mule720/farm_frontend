@@ -266,7 +266,8 @@ function Input({ label, ...props }: React.InputHTMLAttributes<HTMLInputElement> 
 type Tab = 'overview' | 'rooms' | 'silos' | 'trucks';
 
 export default function ColdChain() {
-  const { enterprises } = useOrg();
+  const { org } = useOrg();
+  const enterprises = org?.enterprises ?? [];
   const eid = enterprises[0]?.id ?? '';
 
   const initData = (() => {
