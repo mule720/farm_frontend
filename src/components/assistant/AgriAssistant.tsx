@@ -110,7 +110,7 @@ export default function AgriAssistant() {
 
   const navigate = (p: string) => {
     window.dispatchEvent(new CustomEvent('agri:navigate', { detail: { page: p } }));
-    if (window.innerWidth < 640) setOpen(false);
+    setOpen(false);          // get out of the way so the page is visible; the Ask AI button brings the chat back
   };
 
   async function send(text: string, opts: { coach?: boolean; lesson?: string } = {}) {
