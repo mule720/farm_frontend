@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { usePageBridge } from '@/lib/assistant/bridge';
 import { useOrg } from '@/store/orgStore';
 import { useAuth } from '@/contexts/AuthContext';
 import IncomingCallBanner from '@/components/video/IncomingCallBanner';
@@ -143,6 +144,8 @@ export default function AppShellV2() {
 
   // Refresh alert count whenever page changes (covers IoT pages that may create alerts)
   React.useEffect(() => { setAlertCount(countAlerts()); }, [currentPage]);
+
+  usePageBridge(currentPage, NAV_ITEMS.find(n => n.id === currentPage)?.label, (p) => { if (NAV_ITEMS.some(n => n.id === p)) navigate(p); });
 
   if (!org) return null;
 

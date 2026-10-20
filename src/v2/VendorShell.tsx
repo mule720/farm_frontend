@@ -4,6 +4,7 @@
 // vendor GraphQL schema (apps/market/vendor_schema.py); nothing is seeded.
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useState } from 'react';
+import { usePageBridge } from '@/lib/assistant/bridge';
 import { useOrg } from '@/store/orgStore';
 import { useAuth } from '@/contexts/AuthContext';
 import DataSharingConsent from '@/pages/settings/DataSharingConsent';
@@ -117,6 +118,7 @@ function Shell({ cfg, activeTab, setActiveTab, orgName }: { cfg: { icon: string;
   const [open, setOpen] = useState(true);
   const tabs = cfg.tabs.filter(t => t.id !== 'team' || hasPermission('team'));
   const tab = tabs.find(t => t.id === activeTab) ?? tabs[0];
+  usePageBridge(tab.id, tab.label, (p) => { if (tabs.some(t => t.id === p)) setActiveTab(p); });
   return (
     <div className="min-h-screen bg-slate-950 flex">
       <aside className={`fixed top-0 left-0 h-full bg-slate-900 border-r border-slate-800 z-40 transition-all duration-300 flex flex-col ${open ? 'w-56' : 'w-14'}`}>

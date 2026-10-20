@@ -5,6 +5,7 @@
 // same aggregated district dashboards a gov viewer sees.
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useState } from 'react';
+import { usePageBridge } from '@/lib/assistant/bridge';
 import { useAuth } from '@/contexts/AuthContext';
 import TeamPermissions from '@/pages/settings/TeamPermissions';
 import PartnerDashboard from '@/pages/partner/PartnerDashboard';
@@ -27,6 +28,7 @@ export default function ExtensionShell() {
   const [activeTab, setActiveTab] = useState<ExtTab>('caseload');
   const tabs = EXT_TABS.filter(t => { const [m, a] = TAB_MODULE[t.id]; return a === 'create' ? canCreate(m) : hasPermission(m); });
   const [open, setOpen] = useState(true);
+  usePageBridge(activeTab, tabs.find(t => t.id === activeTab)?.label, (p) => { if (tabs.some(t => t.id === p)) setActiveTab(p as ExtTab); });
 
   return (
     <div className="min-h-screen bg-slate-100 flex">

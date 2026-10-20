@@ -5,6 +5,7 @@
 // dashboards a government viewer gets.
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useState } from 'react';
+import { usePageBridge } from '@/lib/assistant/bridge';
 import { useAuth } from '@/contexts/AuthContext';
 import PartnerDashboard from '@/pages/partner/PartnerDashboard';
 import EcosystemDashboard from '@/pages/government/EcosystemDashboard';
@@ -34,6 +35,7 @@ export default function PartnerShell() {
   const [active, setActive] = useState<string>('programmes');
   const [preset, setPreset] = useState<{ province: string; district: string } | null>(null);
   const [open, setOpen] = useState(true);
+  usePageBridge(active, undefined, (p) => setActive(p));
   const tabs = TABS.filter(t => hasPermission(TAB_MODULE[t.id]));
   const sections = [...new Set(tabs.map(t => t.section))];
 

@@ -17,6 +17,7 @@ import GovernmentShell from '@/v2/GovernmentShell';
 import ExtensionShell from '@/v2/ExtensionShell';
 import PartnerShell from '@/v2/PartnerShell';
 import LenderReport from '@/pages/finance/LenderReport';
+import AgriAssistant from '@/components/assistant/AgriAssistant';
 
 // ─── Inner router — has access to both org + auth state ──────────────────────
 
@@ -82,6 +83,7 @@ export default function AppV2() {
     <AuthProvider>
       <OrgProvider>
         <AppRouter />
+        <AgriAssistant />
       </OrgProvider>
     </AuthProvider>
   );

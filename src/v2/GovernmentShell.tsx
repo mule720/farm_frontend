@@ -5,6 +5,7 @@
 // farms that have opted in to data sharing, plus district advisory broadcast.
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useState } from 'react';
+import { usePageBridge } from '@/lib/assistant/bridge';
 import { useAuth } from '@/contexts/AuthContext';
 import GovernmentDashboard from '@/pages/government/GovernmentDashboard';
 import TeamPermissions from '@/pages/settings/TeamPermissions';
@@ -36,6 +37,7 @@ export default function GovernmentShell() {
   const [preset, setPreset] = useState<{ province: string; district: string } | null>(null);
   const tabs = GOV_TABS.filter(t => hasPermission(TAB_MODULE[t.id]));
   const [open, setOpen] = useState(true);
+  usePageBridge(activeTab, tabs.find(t => t.id === activeTab)?.label, (p) => { if (tabs.some(t => t.id === p)) setActiveTab(p as GovTab); });
 
   return (
     <div className="min-h-screen bg-slate-100 flex">
