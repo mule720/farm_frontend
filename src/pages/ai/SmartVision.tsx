@@ -1,6 +1,6 @@
 /**
  * SmartVision — CCTV · Drone · AI Vision Doctor · Community Intel
- * Fully localStorage-based; no backend required.
+ * The AI Vision Doctor tab calls the server (Claude). CCTV, Drone and Community tabs are still saved only in this browser.
  */
 import React, { useState, useMemo, useCallback } from 'react';
 import {
@@ -11,6 +11,7 @@ import {
   Hash, ArrowDown, ArrowUp, Minus, Radio, Navigation,
 } from 'lucide-react';
 import { useOrg } from '@/store/orgStore';
+import { gqlRequest } from '@/lib/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -64,6 +65,8 @@ interface VisionAnalysis {
   recommendations: string[];
   createdAt: string;
   isPublic: boolean;
+  notConfigured?: boolean;
+  model?: string;
 }
 
 interface DroneFlight {
@@ -505,41 +508,74 @@ function CameraWatchTab({ cameras, counts, alerts, enterprises, addCamera, delet
 
 // ─── AI VISION DOCTOR TAB ─────────────────────────────────────────────────────
 
-function AIDoctorTab({ enterprises, analyses, addAnalysis }: {
+const ANALYZE = `mutation($t:String!,$d:String,$b:String,$m:String,$x:String,$p:Boolean){ analyzeImage(analysisType:$t,userDescription:$d,imageBase64:$b,mediaType:$m,extraContext:$x,isPublic:$p){ analysis { id analysisType imageUrl diagnosis severity confidencePct aiSummary findings recommendations extraData createdAt isPublic aiModelUsed } } }`;
+const HISTORY = `{ visionAnalyses(limit:15){ id analysisType imageUrl diagnosis severity confidencePct aiSummary findings recommendations extraData createdAt isPublic aiModelUsed } }`;
+const asList = (v: any) => (typeof v === 'string' ? (() => { try { return JSON.parse(v); } catch { return []; } })() : v) || [];
+const asObj = (v: any) => (typeof v === 'string' ? (() => { try { return JSON.parse(v); } catch { return {}; } })() : v) || {};
+const toVA = (a: any): VisionAnalysis => ({
+  id: a.id, imageUrl: a.imageUrl || '', analysisType: a.analysisType, enterpriseId: '', diagnosis: a.diagnosis, severity: a.severity,
+  confidencePct: a.confidencePct, aiSummary: a.aiSummary, findings: asList(a.findings), recommendations: asList(a.recommendations),
+  createdAt: a.createdAt, isPublic: a.isPublic, notConfigured: !!asObj(a.extraData).not_configured, model: a.aiModelUsed,
+});
+
+/** Shrink a photo in the browser before sending it: longest side 1280 px, JPEG. Phones take 5-10 MB pictures. */
+function shrinkPhoto(file: File): Promise<{ b64: string; preview: string }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+      c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
+      const data = c.toDataURL('image/jpeg', 0.82);
+      URL.revokeObjectURL(url);
+      resolve({ b64: data.split(',')[1], preview: data });
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That file could not be read as a picture.')); };
+    img.src = url;
+  });
+}
+
+function AIDoctorTab({ enterprises }: {
   enterprises: {id:string;name:string}[];
-  analyses: VisionAnalysis[];
-  addAnalysis: (a: VisionAnalysis) => void;
+  analyses?: VisionAnalysis[];
+  addAnalysis?: (a: VisionAnalysis) => void;
 }) {
-  const [form, setForm] = useState({ imageUrl: '', analysisType: 'crop_disease', description: '', enterpriseId: '', isPublic: false });
+  const [form, setForm] = useState({ analysisType: 'crop_disease', description: '', enterpriseId: '', isPublic: false });
+  const [photo, setPhoto] = useState<{ b64: string; preview: string } | null>(null);
   const [result, setResult] = useState<VisionAnalysis | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [error, setError] = useState('');
+  const [analyses, setAnalyses] = useState<VisionAnalysis[]>([]);
 
-  function runAnalysis(e: React.FormEvent) {
+  React.useEffect(() => {
+    gqlRequest<any>(HISTORY).then(r => setAnalyses((r.visionAnalyses || []).map(toVA).filter((a: VisionAnalysis) => !a.notConfigured))).catch(() => {});
+  }, []);
+
+  async function pick(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setError('');
+    try { setPhoto(await shrinkPhoto(f)); } catch (err: any) { setError(err.message); }
+  }
+
+  async function runAnalysis(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.imageUrl.trim()) { alert('Please enter an image URL'); return; }
-    setAnalyzing(true);
-    setResult(null);
-    // Simulate AI processing delay
-    setTimeout(() => {
-      const sim = simulateAI(form.analysisType);
-      const analysis: VisionAnalysis = {
-        id: `va-${uid()}`,
-        imageUrl: form.imageUrl,
-        analysisType: form.analysisType,
-        enterpriseId: form.enterpriseId,
-        diagnosis: sim.diagnosis,
-        severity: sim.severity,
-        confidencePct: 72 + Math.floor(Math.random() * 22),
-        aiSummary: sim.summary,
-        findings: sim.findings,
-        recommendations: sim.recommendations,
-        createdAt: new Date().toISOString(),
-        isPublic: form.isPublic,
-      };
-      setResult(analysis);
-      addAnalysis(analysis);
-      setAnalyzing(false);
-    }, 2200);
+    if (!photo) { setError('Choose or take a photo first.'); return; }
+    setAnalyzing(true); setResult(null); setError('');
+    try {
+      const ent = enterprises.find(x => x.id === form.enterpriseId);
+      const r = await gqlRequest<any>(ANALYZE, {
+        t: form.analysisType, d: form.description, b: photo.b64, m: 'image/jpeg', p: form.isPublic,
+        x: ent ? `Enterprise: ${ent.name}` : '',
+      });
+      const va = toVA(r.analyzeImage.analysis);
+      setResult(va);
+      if (!va.notConfigured) setAnalyses(prev => [va, ...prev]);
+    } catch (err: any) {
+      setError(err.message || 'The analysis failed. Please try again.');
+    } finally { setAnalyzing(false); }
   }
 
   return (
@@ -564,11 +600,11 @@ function AIDoctorTab({ enterprises, analyses, addAnalysis }: {
             </div>
             <form onSubmit={runAnalysis} className="space-y-3">
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Image URL *</label>
-                <input type="url" value={form.imageUrl} onChange={e => setForm(f => ({...f, imageUrl: e.target.value}))}
-                  placeholder="https://… (imgbb.com, imgur.com, etc.)" required
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500" />
-                <p className="text-[10px] text-slate-400 mt-1">Upload your photo to imgbb.com or similar and paste the direct URL here.</p>
+                <label className="block text-xs text-slate-500 mb-1">Photo *</label>
+                <input type="file" accept="image/*" onChange={pick}
+                  className="w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-violet-100 file:px-3 file:py-2 file:text-violet-700 file:font-medium" />
+                {photo && <img src={photo.preview} alt="Chosen photo" className="mt-2 rounded-lg border border-slate-200 max-h-40 object-contain" />}
+                <p className="text-[10px] text-slate-400 mt-1">Take a clear, well-lit close-up. On a phone this opens the camera. The picture is shrunk before it is sent.</p>
               </div>
               <div>
                 <label className="block text-xs text-slate-500 mb-1">Describe what you see (optional)</label>
@@ -590,6 +626,7 @@ function AIDoctorTab({ enterprises, analyses, addAnalysis }: {
                   <span className="text-xs text-slate-600">Share with community</span>
                 </label>
               </div>
+              {error && <p className="text-xs text-red-600">{error}</p>}
               <button type="submit" disabled={analyzing}
                 className="w-full py-2.5 bg-violet-600 text-white rounded-xl font-medium text-sm hover:bg-violet-700 disabled:opacity-60 flex items-center justify-center gap-2">
                 {analyzing ? <><Loader2 className="w-4 h-4 animate-spin" /> Analysing with AI…</> : <><Brain className="w-4 h-4" /> Run AI Analysis</>}
@@ -606,7 +643,7 @@ function AIDoctorTab({ enterprises, analyses, addAnalysis }: {
                 <Brain className="w-8 h-8 text-violet-600 animate-pulse" />
               </div>
               <p className="text-violet-700 font-semibold text-lg">AI is analysing your image…</p>
-              <p className="text-violet-500 text-sm mt-1">Consulting agricultural knowledge base</p>
+              <p className="text-violet-500 text-sm mt-1">This takes about 10 seconds</p>
               <div className="mt-4 flex gap-1 justify-center">
                 {[0,1,2].map(i => <span key={i} className={`w-2 h-2 rounded-full bg-violet-400 animate-bounce`} style={{animationDelay:`${i*150}ms`}} />)}
               </div>
@@ -621,13 +658,16 @@ function AIDoctorTab({ enterprises, analyses, addAnalysis }: {
                       <h3 className="font-bold text-slate-900">{result.diagnosis}</h3>
                       <SevBadge sev={result.severity} />
                     </div>
-                    <div className="text-xs text-slate-500">AI Confidence: <strong>{result.confidencePct}%</strong> · <span className="text-violet-500">AgroNexus AI v2</span></div>
+                    <div className="text-xs text-slate-500">AI Confidence: <strong>{result.confidencePct}%</strong> · <span className="text-violet-500">{result.model || 'Claude'}</span></div>
                   </div>
                   <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${result.severity === 'critical' ? 'bg-red-100' : result.severity === 'high' ? 'bg-orange-100' : result.severity === 'medium' ? 'bg-amber-100' : result.severity === 'low' ? 'bg-blue-100' : 'bg-green-100'}`}>
                     {result.severity === 'none' ? <CheckCircle className="w-6 h-6 text-green-600" /> : <AlertTriangle className={`w-6 h-6 ${result.severity === 'critical' ? 'text-red-600' : result.severity === 'high' ? 'text-orange-600' : 'text-amber-600'}`} />}
                   </div>
                 </div>
               </div>
+              {result.notConfigured && (
+                <div className="px-5 py-3 bg-amber-50 border-b border-amber-200 text-sm text-amber-800">The AI service is not connected yet, so this photo was not analysed. Ask your platform administrator to add the Claude API key.</div>
+              )}
               {result.aiSummary && (
                 <div className="px-5 py-4 bg-violet-50 border-b border-slate-100">
                   <p className="text-sm text-slate-700 leading-relaxed">{result.aiSummary}</p>
@@ -665,9 +705,9 @@ function AIDoctorTab({ enterprises, analyses, addAnalysis }: {
             <div className="bg-white border border-slate-200 rounded-xl p-5">
               <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2"><Clock className="w-4 h-4 text-slate-400" /> Recent Analyses</h3>
               {analyses.length === 0 ? (
-                <p className="text-sm text-slate-400">No analyses yet. Upload an image to get started.</p>
+                <p className="text-sm text-slate-400">No analyses yet. Add a photo to get started.</p>
               ) : (
-                analyses.slice().reverse().slice(0, 8).map(h => (
+                analyses.slice(0, 8).map(h => (
                   <div key={h.id} className="flex items-start gap-3 py-3 border-b border-slate-50 last:border-0 cursor-pointer hover:bg-slate-50 rounded-lg px-2" onClick={() => setResult(h)}>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -1029,8 +1069,7 @@ export default function SmartVisionModule() {
       )}
       {tab === 'doctor' && (
         <AIDoctorTab
-          enterprises={enterprises} analyses={analyses}
-          addAnalysis={a => { const n = [...analyses, a]; setAnalyses(n); lsSet(LS_ANALYSES, n); }}
+          enterprises={enterprises}
         />
       )}
       {tab === 'community' && (
