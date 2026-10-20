@@ -160,6 +160,7 @@ export default function AgriAssistant() {
     send(`I am on step ${lessonStep + 1} of the lesson "${lesson.title}": ${lesson.steps[lessonStep].text} Explain it and ask me if I am stuck.`, { coach: true, lesson: lesson.title });
   };
 
+  if ((profile as any)?.role === 'saas_admin') return null;      // the platform portal has its own pages
   if (new URLSearchParams(window.location.search).get('credit')) return null;     // public lender report
 
   return (

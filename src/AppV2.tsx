@@ -16,6 +16,7 @@ import CustomerDashboard from '@/pages/customer/CustomerDashboard';
 import GovernmentShell from '@/v2/GovernmentShell';
 import ExtensionShell from '@/v2/ExtensionShell';
 import PartnerShell from '@/v2/PartnerShell';
+import PlatformShell from '@/v2/PlatformShell';
 import LenderReport from '@/pages/finance/LenderReport';
 import AgriAssistant from '@/components/assistant/AgriAssistant';
 
@@ -51,6 +52,8 @@ function AppRouter() {
   // ── Government / partner account ──────────────────────────────────────────
   // Read-only, de-identified aggregates across consenting farms. No org
   // onboarding — a gov org holds no farm data of its own.
+  // Platform administrator: belongs to no business; has the platform portal instead
+  if (profile.role === 'saas_admin') return <PlatformShell />;
   if (['gov_viewer', 'gov_admin'].includes(profile.role)) return <GovernmentShell />;
   if (['extension_officer', 'extension_supervisor'].includes(profile.role)) return <ExtensionShell />;
   if (['partner_manager', 'partner_admin', 'partner_me_officer', 'partner_observer'].includes(profile.role)) return <PartnerShell />;
