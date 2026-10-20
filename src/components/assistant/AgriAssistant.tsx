@@ -12,10 +12,18 @@ import { Sparkles, X, Send, CheckCircle2, Circle, ArrowRight, GraduationCap, Lis
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrg } from '@/store/orgStore';
 import { gqlRequest } from '@/lib/api';
-import { getTemplate } from '@/lib/templates';
+import { v4 as uuidv4 } from 'uuid';
+import { getTemplate, baseTemplateOf } from '@/lib/templates';
+import { getRecordFields } from '@/lib/recordFields';
+import { getCareSchedule } from '@/lib/careSchedule';
+import { CYCLE_VARIANTS } from '@/lib/cycleTypes';
 import { PLAYBOOKS, accountKind, SetupFacts, SetupStep, Lesson } from '@/lib/assistant/playbooks';
 
-type Action = { type: 'navigate'; page: string; label: string } | { type: 'add_enterprise'; templateId: string; label: string };
+type Action =
+  | { type: 'navigate'; page: string; label: string }
+  | { type: 'add_enterprise'; templateId: string; label: string }
+  | { type: 'start_cycle'; templateId: string; variantId: string; name: string; startDate?: string; setupValues?: Record<string, string>; label: string }
+  | { type: 'customise_template'; templateId: string; name?: string; addFields: any[]; addCare: any[]; label: string };
 type Msg = { role: 'user' | 'assistant'; content: string; actions?: Action[]; sources?: string[]; note?: boolean };
 
 const ASK = `mutation($q:String!,$h:JSONString,$c:JSONString,$id:String){ askAssistant(question:$q,history:$h,context:$c,conversationId:$id){ result } }`;
@@ -42,7 +50,7 @@ function Rich({ text }: { text: string }) {
 
 export default function AgriAssistant() {
   const { profile } = useAuth();
-  const { org, cycles, addEnterprise } = useOrg();
+  const { org, cycles, addEnterprise, addCycle, saveCustomTemplate } = useOrg();
   const kind = accountKind(profile, org);
   const book = PLAYBOOKS[kind];
 
@@ -120,7 +128,7 @@ export default function AgriAssistant() {
       const context = {
         accountType: kind, page: page.page, pageLabel: page.label, mode: isCoach ? 'coach' : 'normal', lesson: opts.lesson,
         steps: steps.map(s => ({ id: s.id, label: s.label, done: s.done })),
-        enterprises: (org?.enterprises ?? []).map((e: any) => ({ name: e.name, templateId: e.templateId })),
+        enterprises: (org?.enterprises ?? []).map((e: any) => { const t = getTemplate(e.templateId); return { name: e.name, templateId: e.templateId, baseTemplateId: t ? baseTemplateOf(t).id : e.templateId }; }),
       };
       const d = await gqlRequest<{ askAssistant: { result: string } }>(ASK, { q: question, h: JSON.stringify(history), c: JSON.stringify(context), id: convo.current });
       const r = JSON.parse(d.askAssistant.result);
@@ -137,6 +145,8 @@ export default function AgriAssistant() {
 
   function runAction(a: Action) {
     if (a.type === 'navigate') return navigate(a.page);
+    if (a.type === 'start_cycle') return startCycle(a);
+    if (a.type === 'customise_template') return customise(a);
     // add_enterprise
     const t = getTemplate(a.templateId);
     if (!t || !org) return;
@@ -152,6 +162,61 @@ export default function AgriAssistant() {
       actions: [{ type: 'navigate', page: 'production', label: 'Open Production' }],
     }]);
     setChips(['Help me start my first cycle', 'What is a template?', 'Teach me step by step']);
+  }
+
+  const say = (content: string, actions?: Action[]) => setMsgs(p => [...p, { role: 'assistant', note: true, content, actions }]);
+
+  /** the farm's enterprise that runs this built-in template (or the farm's own copy of it) */
+  const enterpriseFor = (templateId: string) =>
+    (org?.enterprises ?? []).find((e: any) => { const t = getTemplate(e.templateId); return t && baseTemplateOf(t).id === templateId; });
+
+  function startCycle(a: Extract<Action, { type: 'start_cycle' }>) {
+    const t = getTemplate(a.templateId);
+    if (!org || !t) return;
+    if (!org.onboardingComplete) return say('Finish the set-up wizard first, then I can start the cycle for you.');
+    const ent = enterpriseFor(a.templateId);
+    if (!ent) return say(`You do not have a **${t.name}** enterprise yet. Add it first, then press the cycle button again.`, [{ type: 'add_enterprise', templateId: a.templateId, label: `Add ${t.name}` }]);
+    const variant = (CYCLE_VARIANTS[t.category] ?? []).find(v => v.id === a.variantId);
+    if (!variant) return say('I could not find that cycle type for this template. Open **Production** and use New Cycle to pick it.');
+    const start = a.startDate || new Date().toISOString().slice(0, 10);
+    const end = new Date(new Date(start).getTime() + variant.defaultDays * 86400000).toISOString().slice(0, 10);
+    const setup = a.setupValues ?? {};
+    const summary = Object.entries(setup).map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join(', ');
+    addCycle({
+      enterpriseId: ent.id, name: a.name, variantId: variant.id, setupValues: setup, startDate: start, expectedEndDate: end,
+      status: 'active', currentStageId: '', productionUnits: [],
+      notes: [summary ? `Config: ${summary}` : '', `Cycle type: ${variant.label}`].filter(Boolean).join('\n'),
+    } as any);
+    say(`Done. **${a.name}** is running as a **${variant.label}** cycle, starting ${start}. Open **Production** to see it: record the Daily Log and tick the Care Plan each day. Want me to help with the next cycle or set up the daily boxes?`,
+      [{ type: 'navigate', page: 'production', label: 'Open Production' }]);
+    setChips(['What do I record each day?', 'Help me with the next stage', 'Add my own boxes to the template']);
+  }
+
+  function customise(a: Extract<Action, { type: 'customise_template' }>) {
+    const ent = enterpriseFor(a.templateId);
+    const cur = ent && getTemplate(ent.templateId);
+    if (!org || !ent || !cur) return say('Add that enterprise first, then I can change its template for you.');
+    const base = baseTemplateOf(cur);
+    const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 24) || 'field';
+    const taken = new Set(getRecordFields(cur).map((f: any) => f.id));
+    const newFields = (a.addFields ?? []).map((f: any) => {
+      let id = slug(f.label); while (taken.has(id)) id += '_2'; taken.add(id);
+      const bench = (f.min != null || f.max != null || f.target != null) ? { min: f.min, max: f.max, target: f.target } : undefined;
+      return { id, label: f.label, type: f.type, unit: f.unit || undefined, required: !!f.required, options: f.type === 'select' ? f.options : undefined, benchmark: bench };
+    });
+    const newCare = (a.addCare ?? []).map((c: any) => ({
+      id: uuidv4(), kind: c.kind, title: c.title, product: c.product, dose: c.dose, method: c.method,
+      startDay: c.startDay, endDay: c.endDay ?? undefined, repeatEveryDays: c.repeatEveryDays ?? undefined, withdrawalDays: c.withdrawalDays ?? undefined, notes: c.notes,
+    }));
+    const name = (a.name || (cur.isCustom ? cur.name : `My ${base.name}`)).slice(0, 60);
+    saveCustomTemplate({
+      ...cur, id: cur.isCustom ? cur.id : `custom_${uuidv4()}`, name, shortName: name, baseTemplateId: base.id, isCustom: true,
+      version: cur.isCustom ? (cur.version ?? 1) + 1 : 1,
+      recordFields: [...getRecordFields(cur), ...newFields], careSchedule: [...getCareSchedule(cur), ...newCare],
+    } as any, ent.id);
+    const parts = [newFields.length ? `${newFields.length} Daily Log box${newFields.length > 1 ? 'es' : ''} (${newFields.map((f: any) => f.label).join(', ')})` : '', newCare.length ? `${newCare.length} care-guide item${newCare.length > 1 ? 's' : ''}` : ''].filter(Boolean).join(' and ');
+    say(`Saved. I added ${parts} to your template **${name}**. New cycles use it, and it is shared with your whole company. Open a cycle and look at the **Daily Log** and **Care Plan** tabs to see them. Please check every care item with your vet or extension officer.`,
+      [{ type: 'navigate', page: 'production', label: 'Open Production' }]);
   }
 
   const startLesson = (l: Lesson) => { setLesson(l); setLessonStep(0); };
