@@ -2,6 +2,7 @@
  * Aquaculture Dashboard — Ponds · Parameters · Aeration · Feeding · Water Quality
  * Fully localStorage-based; no backend required.
  */
+import { useLinked, LiveBadge, DeviceLink } from '@/lib/liveDevices';
 import React, { useState, useMemo } from 'react';
 import {
   Waves, Droplets, Thermometer, Activity, AlertTriangle, CheckCircle,
@@ -17,6 +18,7 @@ type PondStatus = 'excellent' | 'good' | 'fair' | 'critical';
 
 interface Pond {
   id: string;
+  deviceId?: string;       // the real device that feeds this pond's readings
   name: string;
   enterpriseId: string;
   type: 'earthen' | 'concrete' | 'cage' | 'raceway' | 'biofloc' | 'rас';
@@ -187,6 +189,15 @@ function StatusBadge({ status }: { status: PondStatus }) {
 }
 
 // ─── Pond Card ────────────────────────────────────────────────────────────────
+
+// Real readings from the linked device replace the typed or demo values
+const POND_LIVE = (_p: Pond, get: (...m: string[]) => number | undefined): Partial<Pond> => ({
+  do_mgl: get('dissolved_oxygen', 'do'), ph: get('ph'), tempC: get('temperature', 'water_temperature'),
+  ammoniaMgl: get('ammonia'), turbidityNtu: get('turbidity'), levelPct: get('water_level'),
+});
+const POND_DERIVE = (p: Pond): Pond => ({
+  ...p, status: p.do_mgl < 4 || p.ammoniaMgl > 0.2 ? 'critical' : p.do_mgl < 6 || p.ammoniaMgl > 0.1 ? 'fair' : 'good',
+});
 
 function PondCard({ pond, onAerator, onSelect, selected }: {
   pond: Pond; selected: boolean;
@@ -406,7 +417,8 @@ export default function AquacultureDashboard() {
   const enterprises = (org?.enterprises ?? []).map(e => ({ id:e.id, name:e.name }));
   const seeds = useMemo(() => mkSeeds(enterprises), []);
 
-  const [ponds,    setPonds]   = useState<Pond[]>(() => ls(LS.PONDS, seeds.PONDS));
+  const [pondsStored, setPonds] = useState<Pond[]>(() => ls(LS.PONDS, seeds.PONDS));
+  const ponds = useLinked(pondsStored, POND_LIVE, POND_DERIVE);
   const [feeding,  setFeeding] = useState<FeedingEvent[]>(() => ls(LS.FEEDING, seeds.FEEDING));
   const [water,    setWater]   = useState<WaterChangeLog[]>(() => ls(LS.WATER, seeds.WATER));
   const [mort,     setMort]    = useState<MortalityLog[]>(() => ls(LS.MORT, seeds.MORT));
@@ -433,6 +445,10 @@ export default function AquacultureDashboard() {
       return { ...p, aeratorOn: on, do_mgl: parseFloat(newDo.toFixed(1)), status: newStatus };
     });
     sv(LS.PONDS, setPonds, n);
+  }
+
+  function linkDevice(id: string, deviceId: string | undefined) {
+    sv(LS.PONDS, setPonds, pondsStored.map(p => p.id === id ? { ...p, deviceId } : p));
   }
 
   function resolveAlert(id: string) {
@@ -569,10 +585,13 @@ export default function AquacultureDashboard() {
             <div className="space-y-4">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <h3 className="font-semibold text-slate-800">{selected.name} — Detail View</h3>
-                <button onClick={() => simulateUpdate(selected.id)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">
-                  <RefreshCw className="w-3.5 h-3.5" /> Refresh Readings
-                </button>
+                {selected.deviceId
+                  ? <LiveBadge live={selected.live} />
+                  : <button onClick={() => simulateUpdate(selected.id)} title="Makes up new values to try the screen. Link a device for real readings." className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">
+                      <RefreshCw className="w-3.5 h-3.5" /> Demo: change values
+                    </button>}
               </div>
+              <DeviceLink value={selected.deviceId} onChange={d => linkDevice(selected.id, d)} />
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <DOTrendChart pond={selected} />
                 {/* Parameter details */}

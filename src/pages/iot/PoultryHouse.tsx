@@ -2,6 +2,7 @@
  * Poultry House Dashboard — Climate · Egg Counter · Feed & Water · Mortality · Controls
  * Fully localStorage-based; no backend required.
  */
+import { useLinked, LiveBadge, DeviceLink } from '@/lib/liveDevices';
 import React, { useState, useMemo } from 'react';
 import {
   ThermometerSun, Wind, Droplets, Activity, AlertTriangle, CheckCircle,
@@ -17,6 +18,7 @@ type HouseStatus = 'optimal' | 'good' | 'warning' | 'critical';
 
 interface PoultryHouse {
   id: string;
+  deviceId?: string;       // the real device (climate sensor) that feeds this house
   name: string;
   enterpriseId: string;
   type: HouseType;
@@ -194,6 +196,16 @@ const LAYER_CLIMATE: Record<string, ClimateParam> = {
   nh3Ppm:      { label:'NH₃',         unit:'ppm', warn:[15,20], crit:[20,99], target:'< 15 ppm', icon:<Activity className="w-4 h-4" /> },
 };
 
+// Real readings from the linked climate sensor replace the typed or demo values
+const HOUSE_LIVE = (_h: PoultryHouse, get: (...m: string[]) => number | undefined): Partial<PoultryHouse> => ({
+  tempC: get('temperature'), humidityPct: get('humidity'), co2Ppm: get('co2'), nh3Ppm: get('ammonia', 'nh3'), lightLux: get('light'),
+});
+const HOUSE_DERIVE = (h: PoultryHouse): PoultryHouse => {
+  const crit = h.tempC > 31 || h.nh3Ppm > (h.type === 'layer' ? 20 : 25) || h.co2Ppm > 2500;
+  const warn = h.tempC > 29 || h.nh3Ppm > 15 || h.humidityPct > 70;
+  return { ...h, status: crit ? 'critical' : warn ? 'warning' : h.status === 'optimal' ? 'optimal' : 'good' };
+};
+
 function climateStatus(val: number, cfg: ClimateParam): 'ok'|'warning'|'critical' {
   if (val >= cfg.crit[0] && val <= cfg.crit[1]) return 'critical';
   if (val >= cfg.warn[0] && val <= cfg.warn[1]) return 'warning';
@@ -284,7 +296,8 @@ export default function PoultryHouseDashboard() {
   const enterprises = (org?.enterprises ?? []).map(e => ({ id:e.id, name:e.name }));
   const seeds = useMemo(() => mkSeeds(enterprises), []);
 
-  const [houses,  setHouses]  = useState<PoultryHouse[]>(() => ls(LS.HOUSES, seeds.HOUSES));
+  const [housesStored, setHouses] = useState<PoultryHouse[]>(() => ls(LS.HOUSES, seeds.HOUSES));
+  const houses = useLinked(housesStored, HOUSE_LIVE, HOUSE_DERIVE);
   const [eggs,    setEggs]    = useState<EggCollectionLog[]>(() => ls(LS.EGGS, seeds.EGGS));
   const [feedLog, setFeedLog] = useState<FeedRecord[]>(() => ls(LS.FEED, seeds.FEED));
   const [mort,    setMort]    = useState<MortalityRecord[]>(() => ls(LS.MORT, seeds.MORT));
@@ -321,7 +334,7 @@ export default function PoultryHouseDashboard() {
       updated.status = isCrit ? 'critical' : isWarn ? 'warning' : 'good';
       return updated;
     });
-    sv(LS.HOUSES, setHouses, n);
+    sv(LS.HOUSES, setHouses, n as PoultryHouse[]);
   }
 
   function simulateUpdate(hid: string) {
@@ -336,7 +349,11 @@ export default function PoultryHouseDashboard() {
       const isWarn = newTemp > 29 || newNH3 > 15 || newHum > 70;
       return { ...h, tempC:newTemp, humidityPct:newHum, co2Ppm:newCO2, nh3Ppm:newNH3, status: isCrit?'critical':isWarn?'warning':h.status==='optimal'?'optimal':'good' };
     });
-    sv(LS.HOUSES, setHouses, n);
+    sv(LS.HOUSES, setHouses, n as PoultryHouse[]);
+  }
+
+  function linkDevice(id: string, deviceId: string | undefined) {
+    sv(LS.HOUSES, setHouses, housesStored.map(h => h.id === id ? { ...h, deviceId } : h));
   }
 
   function resolveAlert(id: string) {
@@ -508,10 +525,13 @@ export default function PoultryHouseDashboard() {
           <div className="bg-white border border-slate-200 rounded-xl p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold text-sm text-slate-800">Climate — {selected.name}</h3>
-              <button onClick={() => simulateUpdate(selected.id)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">
-                <RefreshCw className="w-3.5 h-3.5" /> Refresh
-              </button>
+              {selected.deviceId
+                ? <LiveBadge live={selected.live} />
+                : <button onClick={() => simulateUpdate(selected.id)} title="Makes up new values to try the screen. Link a device for real readings." className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">
+                    <RefreshCw className="w-3.5 h-3.5" /> Demo: change values
+                  </button>}
             </div>
+            <DeviceLink value={selected.deviceId} onChange={d => linkDevice(selected.id, d)} className="mb-3" />
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {Object.entries(CLIMATE).map(([key, cfg]) => {
                 const val = (selected as any)[key] as number;
@@ -544,7 +564,7 @@ export default function PoultryHouseDashboard() {
                     onChange={e => {
                       const v = parseInt(e.target.value);
                       const n = houses.map(h => h.id===selected.id ? {...h, ventilationPct:v} : h);
-                      sv(LS.HOUSES, setHouses, n);
+                      sv(LS.HOUSES, setHouses, n as PoultryHouse[]);
                     }}
                     className="flex-1 accent-orange-500" />
                   <span className="text-sm font-bold text-slate-700 w-8 text-right">{selected.ventilationPct}%</span>
@@ -574,9 +594,11 @@ export default function PoultryHouseDashboard() {
                         {emoji} {label}: {h[ctrl] ? 'ON' : 'OFF'}
                       </button>
                     ))}
-                    <button onClick={() => simulateUpdate(h.id)} className="text-xs px-2 py-1.5 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 flex items-center gap-1">
-                      <RefreshCw className="w-3 h-3" /> Refresh
-                    </button>
+                    {h.deviceId
+                      ? <LiveBadge live={h.live} />
+                      : <button onClick={() => simulateUpdate(h.id)} title="Makes up new values to try the screen" className="text-xs px-2 py-1.5 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 flex items-center gap-1">
+                          <RefreshCw className="w-3 h-3" /> Demo
+                        </button>}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

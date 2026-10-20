@@ -10,6 +10,7 @@ import {
   Wind, Sun, Thermometer, Bell,
 } from 'lucide-react';
 import { useOrg } from '@/store/orgStore';
+import LiveAlertRules from '@/components/iot/LiveAlertRules';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -537,7 +538,7 @@ function RuleBuilder({ onSave, onClose }: { onSave: (r: AutomationRule) => void;
 
 export default function AutomationRules() {
   const [rules, setRules] = useState<AutomationRule[]>(() => ls(LS.RULES, mkSeeds()));
-  const [tab, setTab]     = useState<'rules'|'templates'|'log'>('rules');
+  const [tab, setTab]     = useState<'live'|'rules'|'templates'|'log'>('live');
   const [expandedId, setExpanded] = useState<string | null>(null);
   const [showBuilder, setBuilder] = useState(false);
   const [filterCat, setFilterCat] = useState<string>('all');
@@ -660,7 +661,7 @@ export default function AutomationRules() {
   const filteredRules = filterCat === 'all' ? rules : rules.filter(r => r.category === filterCat);
 
   const TABS = [
-    { id:'rules', label:'Rules' }, { id:'templates', label:'Templates' }, { id:'log', label:'Run Log' },
+    { id:'live', label:'Live alerts (real devices)' }, { id:'rules', label:'Demo rules' }, { id:'templates', label:'Templates' }, { id:'log', label:'Demo run log' },
   ] as const;
 
   return (
@@ -712,6 +713,9 @@ export default function AutomationRules() {
           </div>
         )}
       </div>
+
+      {tab === 'live' && <LiveAlertRules />}
+      {tab !== 'live' && <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">These tabs are a demo: rules here are saved in this browser only and cannot react to real devices or control equipment. Use <b>Live alerts</b> for real ones.</div>}
 
       {/* RULES */}
       {tab === 'rules' && (

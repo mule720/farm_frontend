@@ -2,6 +2,7 @@
  * Soil Depth Profiling — 4-depth moisture/temperature profiles per zone
  * Fully localStorage-based; no backend required.
  */
+import { useLinked, LiveBadge, DeviceLink } from '@/lib/liveDevices';
 import React, { useState, useMemo } from 'react';
 import {
   Layers, Droplets, Thermometer, AlertTriangle, CheckCircle,
@@ -24,6 +25,7 @@ interface SoilDepthReading {
 
 interface SoilZone {
   id: string;
+  deviceId?: string;       // the real soil probe that feeds this zone
   name: string;
   enterpriseId: string;
   location: string;
@@ -289,12 +291,38 @@ function ZoneCard({ zone, selected, onClick }: { zone: SoilZone; selected: boole
 
 // ─── MAIN ──────────────────────────────────────────────────────────────────────
 
+// Real readings from a soil probe. One value for the whole profile, or one per depth (soil_moisture_10, _30, _60, _90).
+const ZONE_LIVE = (z: SoilZone, get: (...m: string[]) => number | undefined): Partial<SoilZone> => {
+  const depths = z.depths.map(d => {
+    const m = get(`soil_moisture_${d.depth_cm}`, 'soil_moisture');
+    return {
+      ...d,
+      moisturePct: m ?? d.moisturePct,
+      tempC: get(`soil_temperature_${d.depth_cm}`, `temperature_${d.depth_cm}`, 'soil_temperature', 'temperature') ?? d.tempC,
+      ecDs: get(`ec_${d.depth_cm}`, 'ec') ?? d.ecDs,
+      _live: m !== undefined,
+    };
+  });
+  if (!depths.some(d => (d as any)._live)) return {};
+  return { depths: depths.map(({ _live, ...d }) => d) as SoilZone['depths'] };
+};
+const ZONE_DERIVE = (z: SoilZone): SoilZone => {
+  const tex = TEXTURE_PROPS[z.texture];
+  const avgM = z.depths.reduce((t, d) => t + d.moisturePct, 0) / z.depths.length;
+  const paw = tex.fc - tex.pwp;
+  const dep = paw > 0 ? Math.max(0, Math.min(100, ((tex.fc - avgM) / paw) * 100)) : 0;
+  const irrNeeded = dep > 50 ? parseFloat(((dep / 100) * paw * 10).toFixed(1)) : 0;
+  const status: SoilZone['status'] = dep > 75 ? 'critical' : dep > 50 ? 'stress' : dep > 25 ? 'adequate' : 'optimal';
+  return { ...z, avgMoisturePct: parseFloat(avgM.toFixed(1)), depletionPct: parseFloat(dep.toFixed(0)), irrigationNeededMm: irrNeeded, status };
+};
+
 export default function SoilDepth() {
   const { org } = useOrg();
   const enterprises = (org?.enterprises ?? []).map(e => ({ id: e.id, name: e.name }));
   const seeds = useMemo(() => mkSeeds(enterprises), []);
 
-  const [zones,   setZones]   = useState<SoilZone[]>(() => ls(LS.ZONES, seeds.ZONES));
+  const [zonesStored, setZones] = useState<SoilZone[]>(() => ls(LS.ZONES, seeds.ZONES));
+  const zones = useLinked(zonesStored, ZONE_LIVE, ZONE_DERIVE);
   const [irrig,   setIrrig]   = useState<IrrigationEvent[]>(() => ls(LS.IRRIG, seeds.IRRIG));
   const [alerts,  setAlerts]  = useState<SoilAlert[]>(() => ls(LS.ALERTS, seeds.ALERTS));
 
@@ -307,6 +335,10 @@ export default function SoilDepth() {
   const [newZone, setNewZone]   = useState({ name:'', texture:'loam' as SoilTextureType, crop:'maize' as CropType, areaHa:'', location:'' });
 
   function sv<T>(key: string, setter: React.Dispatch<React.SetStateAction<T>>, val: T) { setter(val); lsSet(key, val); }
+
+  function linkDevice(id: string, deviceId: string | undefined) {
+    sv(LS.ZONES, setZones, zonesStored.map(z => z.id === id ? { ...z, deviceId } : z));
+  }
 
   function simulateReadings(id: string) {
     const n = zones.map(z => {
@@ -499,10 +531,13 @@ export default function SoilDepth() {
                   <h3 className="font-semibold text-slate-800">{selected.name}</h3>
                   <p className="text-xs text-slate-400">{selected.areaHa}ha · {CROP_LABELS[selected.crop]} ({selected.cropStage}) · {TEXTURE_PROPS[selected.texture].label} soil</p>
                 </div>
-                <button onClick={() => simulateReadings(selected.id)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">
-                  <RefreshCw className="w-3.5 h-3.5" /> Refresh Readings
-                </button>
+                {selected.deviceId
+                  ? <LiveBadge live={selected.live} />
+                  : <button onClick={() => simulateReadings(selected.id)} title="Makes up new values to try the screen. Link a probe for real readings." className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">
+                      <RefreshCw className="w-3.5 h-3.5" /> Demo: change values
+                    </button>}
               </div>
+              <DeviceLink value={selected.deviceId} onChange={d => linkDevice(selected.id, d)} className="mb-3" />
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <DepthProfileChart zone={selected} />

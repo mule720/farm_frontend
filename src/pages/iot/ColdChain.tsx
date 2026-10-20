@@ -2,6 +2,7 @@
  * Cold Chain Monitor — Cold Rooms · Grain Silos · Refrigerated Trucks
  * localStorage-based; no backend required.
  */
+import { useLinked, LiveBadge, DeviceLink } from '@/lib/liveDevices';
 import React, { useState } from 'react';
 import {
   Snowflake, Thermometer, Droplets, Wind, AlertTriangle, CheckCircle,
@@ -14,6 +15,7 @@ import { useOrg } from '@/store/orgStore';
 
 interface ColdRoom {
   id: string;
+  deviceId?: string;       // the real device that feeds this item
   name: string;
   enterpriseId: string;
   targetTempC: number;
@@ -31,6 +33,7 @@ interface ColdRoom {
 
 interface GrainSilo {
   id: string;
+  deviceId?: string;       // the real device that feeds this item
   name: string;
   enterpriseId: string;
   grain: string;
@@ -48,6 +51,7 @@ interface GrainSilo {
 
 interface RefrigTruck {
   id: string;
+  deviceId?: string;       // the real device that feeds this item
   name: string;
   plateNumber: string;
   driverName: string;
@@ -265,6 +269,19 @@ function Input({ label, ...props }: React.InputHTMLAttributes<HTMLInputElement> 
 
 type Tab = 'overview' | 'rooms' | 'silos' | 'trucks';
 
+// Real readings from the linked logger. A door or compressor contact reports 1 (open / on) or 0.
+const ROOM_LIVE = (_r: ColdRoom, get: (...m: string[]) => number | undefined): Partial<ColdRoom> => {
+  const door = get('door', 'door_open'); const comp = get('compressor', 'compressor_on');
+  return { currentTempC: get('temperature'), humidityPct: get('humidity'), doorOpen: door === undefined ? undefined : door > 0, compressorOn: comp === undefined ? undefined : comp > 0 };
+};
+const SILO_LIVE = (_s: GrainSilo, get: (...m: string[]) => number | undefined): Partial<GrainSilo> => ({
+  topTempC: get('temp_top', 'temperature_top', 'temperature'), midTempC: get('temp_mid', 'temperature_mid', 'temperature'),
+  botTempC: get('temp_bottom', 'temperature_bottom', 'temperature'), moisturePct: get('moisture', 'grain_moisture'), co2Ppm: get('co2'),
+});
+const TRUCK_LIVE = (_t: RefrigTruck, get: (...m: string[]) => number | undefined): Partial<RefrigTruck> => ({
+  currentTempC: get('temperature'), gpsLat: get('latitude', 'lat'), gpsLng: get('longitude', 'lng', 'lon'),
+});
+
 export default function ColdChain() {
   const { org } = useOrg();
   const enterprises = org?.enterprises ?? [];
@@ -276,15 +293,15 @@ export default function ColdChain() {
     return mkSeeds(eid);
   })();
 
-  const [rooms, setRoomsRaw] = useState<ColdRoom[]>(() => {
+  const [roomsStored, setRoomsRaw] = useState<ColdRoom[]>(() => {
     if (initData) { lsSet(LS.ROOMS, initData.ROOMS); return initData.ROOMS; }
     return ls<ColdRoom[]>(LS.ROOMS, []);
   });
-  const [silos, setSilosRaw] = useState<GrainSilo[]>(() => {
+  const [silosStored, setSilosRaw] = useState<GrainSilo[]>(() => {
     if (initData) { lsSet(LS.SILOS, initData.SILOS); return initData.SILOS; }
     return ls<GrainSilo[]>(LS.SILOS, []);
   });
-  const [trucks, setTrucksRaw] = useState<RefrigTruck[]>(() => {
+  const [trucksStored, setTrucksRaw] = useState<RefrigTruck[]>(() => {
     if (initData) { lsSet(LS.TRUCKS, initData.TRUCKS); return initData.TRUCKS; }
     return ls<RefrigTruck[]>(LS.TRUCKS, []);
   });
@@ -292,6 +309,13 @@ export default function ColdChain() {
     if (initData) { lsSet(LS.ALERTS, initData.ALERTS); return initData.ALERTS; }
     return ls<ColdChainAlert[]>(LS.ALERTS, []);
   });
+
+  const rooms = useLinked(roomsStored, ROOM_LIVE);
+  const silos = useLinked(silosStored, SILO_LIVE);
+  const trucks = useLinked(trucksStored, TRUCK_LIVE);
+  const linkRoom = (id: string, deviceId: string | undefined) => setRooms(roomsStored.map(x => x.id === id ? { ...x, deviceId } : x));
+  const linkSilo = (id: string, deviceId: string | undefined) => setSilos(silosStored.map(x => x.id === id ? { ...x, deviceId } : x));
+  const linkTruck = (id: string, deviceId: string | undefined) => setTrucks(trucksStored.map(x => x.id === id ? { ...x, deviceId } : x));
 
   function setRooms(d: ColdRoom[])         { setRoomsRaw(d);  lsSet(LS.ROOMS, d);  }
   function setSilos(d: GrainSilo[])        { setSilosRaw(d);  lsSet(LS.SILOS, d);  }
@@ -565,6 +589,7 @@ export default function ColdChain() {
                       <div>
                         <h3 className="font-semibold text-slate-800">{r.name}</h3>
                         <p className="text-xs text-slate-400 mt-0.5">Last checked {fmtDt(r.lastChecked)}</p>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-2"><LiveBadge live={r.live} /><DeviceLink value={r.deviceId} onChange={d => linkRoom(r.id, d)} /></div>
                       </div>
                       <span className={`text-xs px-2 py-1 rounded-full font-medium ${r.compressorOn ? 'bg-cyan-100 text-cyan-700' : 'bg-slate-100 text-slate-500'}`}>
                         {r.compressorOn ? '❄ Compressor ON' : '⏸ Compressor OFF'}
@@ -652,6 +677,7 @@ export default function ColdChain() {
                     <div>
                       <h3 className="font-semibold text-slate-800">{s.name}</h3>
                       <p className="text-xs text-slate-400 mt-0.5">Grain: {s.grain}</p>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2"><LiveBadge live={s.live} /><DeviceLink value={s.deviceId} onChange={d => linkSilo(s.id, d)} /></div>
                     </div>
                     <span className={`text-xs px-2 py-1 rounded-full font-medium ${s.fumigationActive ? 'bg-yellow-100 text-yellow-700' : 'bg-green-50 text-green-700'}`}>
                       {s.fumigationActive ? '🟡 Fumigating' : '✅ Clear'}
@@ -734,6 +760,7 @@ export default function ColdChain() {
                       <Truck className="w-4 h-4 text-indigo-500" /> {t.name}
                     </h3>
                     <p className="text-xs text-slate-400 mt-0.5">{t.plateNumber} · {t.driverName}</p>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2"><LiveBadge live={t.live} /><DeviceLink value={t.deviceId} onChange={d => linkTruck(t.id, d)} /></div>
                   </div>
                   <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${truckStatusColor(t.status)}`}>
                     {t.status.replace('_', ' ')}

@@ -2,6 +2,7 @@
  * Energy Monitor — Solar · Battery · Generator · Grid · Cost Analytics
  * Fully localStorage-based; no backend required.
  */
+import { useLinked, LiveBadge, DeviceLink } from '@/lib/liveDevices';
 import React, { useState, useMemo } from 'react';
 import {
   Zap, Sun, Battery, Fuel, Activity, AlertTriangle, CheckCircle,
@@ -14,6 +15,7 @@ import { useOrg } from '@/store/orgStore';
 
 interface SolarArray {
   id: string;
+  deviceId?: string;       // the real inverter / meter that feeds this array
   name: string;
   enterpriseId: string;
   capacityKwp: number;         // peak capacity
@@ -32,6 +34,7 @@ interface SolarArray {
 
 interface BatteryBank {
   id: string;
+  deviceId?: string;       // the real battery monitor that feeds this bank
   name: string;
   enterpriseId: string;
   capacityKwh: number;
@@ -289,13 +292,28 @@ function EnergyFlowDiagram({ solarKw, battSocPct, battKw, genKw, loadKw, gridKw 
 
 // ─── MAIN ──────────────────────────────────────────────────────────────────────
 
+// Real readings from an inverter, meter or battery monitor
+const SOLAR_LIVE = (_s: SolarArray, get: (...m: string[]) => number | undefined): Partial<SolarArray> => ({
+  currentOutputKw: get('power_kw', 'output_kw'), tempC: get('temperature'), irradianceWm2: get('irradiance'), todayKwh: get('energy_today_kwh'),
+});
+const SOLAR_DERIVE = (s: SolarArray): SolarArray => ({ ...s, status: s.status === 'fault' ? 'fault' : s.currentOutputKw > 0.05 ? 'generating' : 'idle' });
+const BATT_LIVE = (_b: BatteryBank, get: (...m: string[]) => number | undefined): Partial<BatteryBank> => ({
+  socPct: get('soc', 'battery_soc', 'state_of_charge'), tempC: get('temperature'), chargingKw: get('charge_kw'), dischargingKw: get('discharge_kw'),
+});
+const BATT_DERIVE = (b: BatteryBank): BatteryBank => ({
+  ...b, currentKwh: parseFloat((b.capacityKwh * b.socPct / 100).toFixed(1)),
+  status: b.status === 'fault' ? 'fault' : b.chargingKw > b.dischargingKw ? 'charging' : b.dischargingKw > b.chargingKw ? 'discharging' : 'idle',
+});
+
 export default function EnergyMonitor() {
   const { org } = useOrg();
   const enterprises = (org?.enterprises ?? []).map(e => ({ id: e.id, name: e.name }));
   const seeds = useMemo(() => mkSeeds(enterprises), []);
 
-  const [solar,   setSolar]   = useState<SolarArray[]>(() => ls(LS.SOLAR, seeds.SOLAR));
-  const [batt,    setBatt]    = useState<BatteryBank[]>(() => ls(LS.BATT, seeds.BATT));
+  const [solarStored, setSolar] = useState<SolarArray[]>(() => ls(LS.SOLAR, seeds.SOLAR));
+  const [battStored,  setBatt]  = useState<BatteryBank[]>(() => ls(LS.BATT, seeds.BATT));
+  const solar = useLinked(solarStored, SOLAR_LIVE, SOLAR_DERIVE);
+  const batt  = useLinked(battStored, BATT_LIVE, BATT_DERIVE);
   const [gen,     setGen]     = useState<Generator[]>(() => ls(LS.GEN, seeds.GEN));
   const [loads,   setLoads]   = useState<EnergyLoad[]>(() => ls(LS.LOADS, seeds.LOADS));
   const [alerts,  setAlerts]  = useState<EnergyAlert[]>(() => ls(LS.ALERTS, seeds.ALERTS));
@@ -314,9 +332,17 @@ export default function EnergyMonitor() {
     sv(LS.GEN, setGen, n);
   }
 
+  function linkSolar(id: string, deviceId: string | undefined) {
+    setSolar(prev => { const n = prev.map(x => x.id === id ? { ...x, deviceId } : x); lsSet(LS.SOLAR, n); return n; });
+  }
+  function linkBatt(id: string, deviceId: string | undefined) {
+    setBatt(prev => { const n = prev.map(x => x.id === id ? { ...x, deviceId } : x); lsSet(LS.BATT, n); return n; });
+  }
+
+  // demo values: only for items that have no device linked
   function simulateRefresh() {
     setSolar(prev => {
-      const n = prev.map(s => ({
+      const n = prev.map(s => s.deviceId ? s : ({
         ...s,
         currentOutputKw: s.status === 'fault' ? 0 : parseFloat(Math.max(0, Math.min(s.capacityKwp, s.currentOutputKw + (Math.random() - 0.5) * 3)).toFixed(1)),
         todayKwh: parseFloat((s.todayKwh + s.currentOutputKw * 0.05).toFixed(1)),
@@ -327,6 +353,7 @@ export default function EnergyMonitor() {
     });
     setBatt(prev => {
       const n = prev.map(b => {
+        if (b.deviceId) return b;
         const newSoc = parseFloat(Math.max(0, Math.min(100, b.socPct + (b.chargingKw - b.dischargingKw) * 0.5)).toFixed(0));
         return { ...b, socPct: newSoc, currentKwh: parseFloat((b.capacityKwh * newSoc / 100).toFixed(1)) };
       });
@@ -374,8 +401,8 @@ export default function EnergyMonitor() {
             <h1 className="text-2xl font-bold">Energy Monitor</h1>
             <p className="text-yellow-100 text-sm">Solar · Battery · Generator · Load analytics · Cost per kg</p>
           </div>
-          <button onClick={simulateRefresh} className="ml-auto flex items-center gap-1.5 px-3 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-sm">
-            <RefreshCw className="w-4 h-4" /> Refresh
+          <button onClick={simulateRefresh} title="Makes up new values for items with no device linked. Items linked to a device show real readings." className="ml-auto flex items-center gap-1.5 px-3 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-sm">
+            <RefreshCw className="w-4 h-4" /> Demo values
           </button>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -486,6 +513,8 @@ export default function EnergyMonitor() {
                     </div>
                     <div className="font-semibold text-slate-800 text-sm">{s.name}</div>
                     <div className="text-xs text-slate-400">{s.panelCount} panels · {s.capacityKwp} kWp</div>
+                    <div className="mt-1.5"><LiveBadge live={s.live} /></div>
+                    <DeviceLink value={s.deviceId} onChange={d => linkSolar(s.id, d)} className="mt-1.5" />
                   </div>
                   <Sun className={`w-6 h-6 flex-shrink-0 ${s.status==='generating'?'text-yellow-400':'text-slate-300'}`} />
                 </div>
@@ -532,6 +561,7 @@ export default function EnergyMonitor() {
                 <BatteryRing soc={b.socPct} size={90} />
                 <div className="flex-1 min-w-48">
                   <div className="font-semibold text-slate-800">{b.name}</div>
+                  <div className="flex flex-wrap items-center gap-2 mb-1"><LiveBadge live={b.live} /><DeviceLink value={b.deviceId} onChange={d => linkBatt(b.id, d)} /></div>
                   <div className="text-xs text-slate-400 mb-3">{CHEM_LABEL[b.chemistry]} · {b.cycleCount} charge cycles · {b.tempC}°C</div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {[

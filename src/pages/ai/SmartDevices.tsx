@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
+import { useLinked, LiveBadge, DeviceLink, useDeviceMetrics } from '@/lib/liveDevices';
 import {
   Wifi, WifiOff, Radio, Thermometer, Droplets, Wind, Scale, MapPin,
   Battery, BatteryLow, BatteryMedium, AlertTriangle, CheckCircle,
@@ -154,6 +155,8 @@ interface Device {
   alertEnabled: boolean;
   alertMin?: number;
   alertMax?: number;
+  deviceId?: string;         // the real device (from Device Gateway) that feeds this entry
+  metric?: string;           // which of its measures to show, e.g. temperature
 }
 
 interface AutomationRule {
@@ -272,8 +275,21 @@ function fmtTs(iso: string) {
   return d.toLocaleDateString();
 }
 
+// A linked entry shows the real value, battery and last-seen time of its device
+const DEVICE_LIVE = (d: Device, get: (...m: string[]) => number | undefined, info: { lastSeenAt: string | null }): Partial<Device> => {
+  const v = d.metric ? get(d.metric) : undefined;
+  if (v === undefined) return {};
+  return { reading: v, battery: get('battery_pct') ?? d.battery, lastSeen: info.lastSeenAt || d.lastSeen };
+};
+const DEVICE_DERIVE = (d: Device): Device => {
+  const high = d.alertMax !== undefined && d.reading !== null && d.reading > d.alertMax;
+  const low = d.alertMin !== undefined && d.reading !== null && d.reading < d.alertMin;
+  return { ...d, status: high || low ? 'critical' : 'online' };
+};
+
 function useIoT() {
-  const [devices,   setDevices]   = useState<Device[]>(() => ls(LS_DEVICES, SEED_DEVICES));
+  const [devicesStored, setDevices] = useState<Device[]>(() => ls(LS_DEVICES, SEED_DEVICES));
+  const devices = useLinked(devicesStored, DEVICE_LIVE, DEVICE_DERIVE);
   const [rules,     setRules]     = useState<AutomationRule[]>(() => ls(LS_RULES, SEED_RULES));
   const [alertLogs, setAlertLogs] = useState<AlertLog[]>(() => ls(LS_ALERTS, SEED_ALERTS));
 
@@ -281,10 +297,10 @@ function useIoT() {
   const saveRules   = useCallback((r: AutomationRule[]) => { setRules(r); lsSet(LS_RULES, r); }, []);
   const saveLogs    = useCallback((l: AlertLog[]) => { setAlertLogs(l); lsSet(LS_ALERTS, l); }, []);
 
-  const addDevice    = (d: Device)  => saveDevices([...devices, d]);
+  const addDevice    = (d: Device)  => saveDevices([...devicesStored, d]);
   const updateDevice = (id: string, patch: Partial<Device>) =>
-    saveDevices(devices.map(d => d.id === id ? { ...d, ...patch } : d));
-  const deleteDevice = (id: string) => saveDevices(devices.filter(d => d.id !== id));
+    saveDevices(devicesStored.map(d => d.id === id ? { ...d, ...patch } : d));
+  const deleteDevice = (id: string) => saveDevices(devicesStored.filter(d => d.id !== id));
 
   const addRule    = (r: AutomationRule) => saveRules([...rules, r]);
   const toggleRule = (id: string) => saveRules(rules.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r));
@@ -321,6 +337,25 @@ function ConnTag({ connectivity }: { connectivity: Connectivity }) {
     <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium ${colors[def.color]}`}>
       <Icon className="w-3 h-3" />{def.label}
     </span>
+  );
+}
+
+function LinkPanel({ d, onChange }: { d: Device & { live?: any }; onChange: (patch: Partial<Device>) => void }) {
+  const metrics = useDeviceMetrics(d.deviceId);
+  return (
+    <div className="flex flex-wrap items-center gap-3 bg-slate-50 rounded-lg px-3 py-2">
+      <DeviceLink value={d.deviceId} onChange={id => onChange({ deviceId: id, metric: id ? d.metric : undefined })} />
+      {d.deviceId && (
+        <label className="flex items-center gap-2 text-xs text-slate-500">Show
+          <select value={d.metric ?? ''} onChange={e => onChange({ metric: e.target.value || undefined })} className="border border-slate-200 rounded-lg px-2 py-1 text-xs bg-white text-slate-700">
+            <option value="">choose a measure</option>
+            {metrics.map(m => <option key={m} value={m}>{m.replace(/_/g, ' ')}</option>)}
+          </select>
+        </label>
+      )}
+      {d.deviceId && <LiveBadge live={d.live} />}
+      {!d.deviceId && <span className="text-[11px] text-slate-400">Not linked: values are typed in or demo values.</span>}
+    </div>
   );
 }
 
@@ -797,9 +832,10 @@ export default function SmartDevicesModule() {
                       <div><span className="text-slate-400">Alert Min</span><br /><span className="font-medium">{d.alertMin ?? '—'}</span></div>
                       <div><span className="text-slate-400">Alert Max</span><br /><span className="font-medium">{d.alertMax ?? '—'}</span></div>
                     </div>
+                    <LinkPanel d={d} onChange={patch => updateDevice(d.id, patch)} />
                     {/* Simulate reading */}
                     <div className="flex items-center gap-2">
-                      <button
+                      {!d.deviceId && <button
                         onClick={() => {
                           const tm = DEVICE_TYPE_META[d.type];
                           const typical = tm?.typical ?? 0;
@@ -812,8 +848,8 @@ export default function SmartDevicesModule() {
                         }}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700"
                       >
-                        <RefreshCw className="w-3.5 h-3.5" /> Simulate Reading
-                      </button>
+                        <RefreshCw className="w-3.5 h-3.5" /> Demo reading
+                      </button>}
                       <button
                         onClick={() => updateDevice(d.id, { alertEnabled: !d.alertEnabled })}
                         className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 text-xs rounded-lg text-slate-600 hover:bg-slate-50"

@@ -2,6 +2,7 @@
  * Water Management — Tanks · Pumps · Valves · Irrigation Rules
  * Fully localStorage-based; no backend required.
  */
+import { useLinked, LiveBadge, DeviceLink } from '@/lib/liveDevices';
 import React, { useState, useMemo } from 'react';
 import {
   Droplets, Zap, Settings2, ArrowRight, Plus, Trash2, X,
@@ -19,6 +20,7 @@ type ValveStatus = 'open' | 'closed' | 'auto';
 
 interface Tank {
   id: string;
+  deviceId?: string;       // the real level sensor that feeds this tank
   name: string;
   enterpriseId: string;
   type: TankType;
@@ -441,13 +443,23 @@ function AddRuleModal({ valves, pumps, onSave, onClose }: {
 
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 
+// A level sensor reports litres (volume_l) or a percentage of the tank (water_level / tank_level).
+const TANK_LIVE = (t: Tank, get: (...m: string[]) => number | undefined): Partial<Tank> => {
+  const litres = get('volume_l', 'water_volume_l');
+  if (litres !== undefined) return { currentL: Math.max(0, Math.min(t.capacityL, Math.round(litres))) };
+  const pct = get('water_level', 'tank_level', 'level_pct');
+  return pct === undefined ? {} : { currentL: Math.max(0, Math.min(t.capacityL, Math.round(t.capacityL * pct / 100))) };
+};
+
 export default function WaterManagement() {
   const { org } = useOrg();
   const enterprises = (org?.enterprises ?? []).map(e => ({ id: e.id, name: e.name }));
   const seeds = useMemo(() => mkSeeds(enterprises), []);
 
   const [tab, setTab] = useState<'overview'|'tanks'|'pumps'|'valves'|'rules'>('overview');
-  const [tanks,  setTanks]  = useState<Tank[]>(() => ls(LS.TANKS, seeds.TANKS));
+  const [tanksStored, setTanks] = useState<Tank[]>(() => ls(LS.TANKS, seeds.TANKS));
+  const tanks = useLinked(tanksStored, TANK_LIVE);
+  const linkTank = (id: string, deviceId: string | undefined) => save(LS.TANKS, setTanks, tanksStored.map(x => x.id === id ? { ...x, deviceId } : x));
   const [pumps,  setPumps]  = useState<Pump[]>(() => ls(LS.PUMPS, seeds.PUMPS));
   const [valves, setValves] = useState<Valve[]>(() => ls(LS.VALVES, seeds.VALVES));
   const [rules,  setRules]  = useState<IrrigationRule[]>(() => ls(LS.RULES, seeds.RULES));
@@ -653,6 +665,7 @@ export default function WaterManagement() {
             {tanks.map(t => (
               <div key={t.id}>
                 <TankGauge tank={t} />
+                <div className="mt-1.5 flex flex-col gap-1"><LiveBadge live={t.live} /><DeviceLink value={t.deviceId} onChange={d => linkTank(t.id, d)} /></div>
                 {editingTankId === t.id ? (
                   <div className="flex gap-1 mt-1.5">
                     <input type="number" value={editLitres} onChange={e => setEditLitres(e.target.value)}
@@ -667,8 +680,8 @@ export default function WaterManagement() {
                   </div>
                 ) : (
                   <div className="flex gap-1 mt-1.5">
-                    <button onClick={() => { setEditingTankId(t.id); setEditLitres(String(t.currentL)); }}
-                      className="flex-1 text-xs border border-slate-200 rounded-lg py-1.5 hover:bg-slate-50 text-slate-600">Update Level</button>
+                    {!t.deviceId && <button onClick={() => { setEditingTankId(t.id); setEditLitres(String(t.currentL)); }}
+                      className="flex-1 text-xs border border-slate-200 rounded-lg py-1.5 hover:bg-slate-50 text-slate-600">Update Level</button>}
                     <button onClick={() => { if(window.confirm(`Delete "${t.name}"?`)) { const n = tanks.filter(tk => tk.id !== t.id); save(LS.TANKS, setTanks, n); } }} className="p-1.5 text-slate-300 hover:text-red-500 border border-slate-200 rounded-lg">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
